@@ -57,7 +57,7 @@ Note: `bender init` only materializes the `.claude/` workspace. The `.specify/sc
 # 1. Scaffold a project
 cd ~/projects/my-service
 bender init
-# → .claude/{skills,agents}, .claude/groups.yaml, bender.yaml, artifacts/constitution.md
+# → .claude/{skills,agents}, .claude/groups.yaml, .bender/config.yaml, .bender/artifacts/constitution.md
 
 # 2. (optional) register it for cross-project tooling
 bender register-project ~/projects/my-service --name my-service
@@ -94,7 +94,7 @@ There are two surfaces:
 | Flag | Purpose |
 |---|---|
 | `--project <name>` | Operate on a registered project by name (defaults to the project containing the cwd). |
-| `--config <path>` | Override the path to the project `bender.yaml`. |
+| `--config <path>` | Override the path to the project config file. |
 | `--no-color` | Disable color output. |
 | `--quiet` | Suppress informational logs; errors still print. |
 | `--verbose` | Print loader and resolver decisions to stderr. |
@@ -336,7 +336,7 @@ The fallbacks produce the same artifact layout the binary does. AI-driven slash 
 
 ## Project layout after `bender init`
 
-`bender init` touches exactly three top-level locations: `.claude/` (configuration for Claude Code), `.bender/` (everything bender produces), and `bender.yaml` (per-project overrides).
+`bender init` touches exactly two top-level locations: `.claude/` (configuration for Claude Code) and `.bender/` (everything bender produces, including per-project config).
 
 ```
 your-project/
@@ -355,8 +355,8 @@ your-project/
 │   │   └── ghu/run-<ts>-report.md + {reviews,security,perf}/
 │   ├── sessions/<id>/              #   state.json + events.jsonl (gitignored)
 │   └── cache/                      #   scout caches (gitignored)
-└── bender.yaml                     # per-project agent/skill overrides
-bender.yaml                 # per-project agent/skill overrides (lives at project root)
+│   └── config.yaml             # per-project agent/skill overrides
+
 artifacts/
 └── constitution.md         # heuristic project profile; AI-required sections marked pending
 ```
@@ -367,7 +367,7 @@ Drop a new skill into `.claude/skills/<name>/SKILL.md`. Every agent whose select
 
 Drop `.claude/agents/<name>.md` to override an embedded default agent (same-name fully replaces). Edit `.claude/groups.yaml` to redefine groups.
 
-Per-project tweaks without forking go in `bender.yaml`:
+Per-project tweaks without forking go in `.bender/config.yaml`:
 
 ```yaml
 agents:

@@ -1,4 +1,4 @@
-// Package config loads project-level bender.yaml and applies the precedence rules from spec FR-029.
+// Package config loads project-level .bender/config.yaml and applies the precedence rules from spec FR-029.
 package config
 
 import (
@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AgentOverride encodes the per-agent additive composers usable in bender.yaml.
+// AgentOverride encodes the per-agent additive composers usable in .bender/config.yaml.
 // These are applied AFTER the resolver runs.
 type AgentOverride struct {
 	Skills struct {
@@ -24,7 +24,7 @@ type AgentOverride struct {
 	} `yaml:"write_scope,omitempty"`
 }
 
-// Project is the schema of a per-project bender.yaml.
+// Project is the schema of a per-project .bender/config.yaml.
 type Project struct {
 	Agents map[string]AgentOverride `yaml:"agents,omitempty"`
 }

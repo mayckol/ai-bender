@@ -29,8 +29,9 @@ type ScaffoldResult struct {
 // Scaffold walks the embedded defaults tree and materialises every file under
 // `<ProjectRoot>/.claude/`. Files that already exist are preserved unless Force is true.
 //
-// `defaults/claude/bender.yaml.tmpl` is materialised as `bender.yaml` at the project root (not under
-// `.claude/`) so users can find it next to their `.gitignore` and other root-level config.
+// `defaults/claude/config.yaml.tmpl` is the single exception: it lands at
+// `<ProjectRoot>/.bender/config.yaml` so all bender-managed content lives inside one hidden
+// folder (matching the `.git/config` convention).
 func Scaffold(opts ScaffoldOptions) (*ScaffoldResult, error) {
 	if opts.ProjectRoot == "" {
 		return nil, errors.New("workspace: ProjectRoot is required")
@@ -81,10 +82,11 @@ func Scaffold(opts ScaffoldOptions) (*ScaffoldResult, error) {
 }
 
 // destinationFor maps an embedded path like `claude/skills/foo/SKILL.md` to a destination on disk.
-// `claude/bender.yaml.tmpl` is special-cased: it lands at <root>/bender.yaml.
+// `claude/config.yaml.tmpl` is special-cased: it lands at <root>/.bender/config.yaml. Everything
+// else under `claude/` mirrors into <root>/.claude/.
 func destinationFor(projectRoot, embeddedPath string) (string, bool) {
-	if embeddedPath == "claude/bender.yaml.tmpl" {
-		return filepath.Join(projectRoot, "bender.yaml"), true
+	if embeddedPath == "claude/config.yaml.tmpl" {
+		return filepath.Join(projectRoot, ".bender", "config.yaml"), true
 	}
 	rel := strings.TrimPrefix(embeddedPath, "claude/")
 	return filepath.Join(projectRoot, ".claude", filepath.FromSlash(rel)), false
