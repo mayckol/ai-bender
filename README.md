@@ -215,7 +215,7 @@ bender sessions show 2026-04-16T14-03-22-a3f | jq -c 'select(.type=="finding_rep
 
 #### `bender sessions export <session-id> [--project=<name>]`
 
-Produce a single JSON document with the final `state.json` plus the full ordered event list. The shape is the v1 ingest contract for a future UI server. Round-trips losslessly through `bender sessions show` re-emission (SC-009).
+Produce a single JSON document with the final `state.json` plus the full ordered event list. The shape is the v1 ingest contract for the **bender-ui** server (see [Real-time viewer](#real-time-viewer)). Round-trips losslessly through `bender sessions show` re-emission (SC-009).
 
 ```bash
 bender sessions export 2026-04-16T14-03-22-a3f > /tmp/session.json
@@ -404,6 +404,26 @@ agents:
 ## Multi-project workspace
 
 `bender register-project <path>` adds a project to `~/.bender/workspace.yaml` (or `$XDG_CONFIG_HOME/bender/workspace.yaml`). `bender list-projects` shows them all and marks the current one (the project containing your cwd). Binary commands accept `--project=<name>` to operate against any registered project.
+
+## Real-time viewer
+
+`ui/` ships a small Bun + Preact server (`bender-ui`) that live-streams session events over Server-Sent Events. It reads `.bender/sessions/<id>/` directly — the same files the CLI reads — so there is no separate database and no migration. Designed for watching `/ghu --bg` runs as they unfold in a forked subagent context.
+
+```bash
+cd ui
+bun install
+bun run dev --project /path/to/your/project
+# default port 4317; override with --port=<n> or BENDER_UI_PORT
+```
+
+Open `http://localhost:4317/`:
+
+- `/` — session list with live updates when new sessions appear.
+- `/sessions/<id>` — live timeline: event stream, findings panel, file-changed summary, report link. Freezes on `session_completed`.
+
+When `/ghu --bg` dispatches, the SKILL.md instructs Claude Code to print the viewer URL (`http://localhost:4317/sessions/<id>`) alongside the session id and report path. If the server is running, the dispatcher also issues a platform `open` / `xdg-open` once; otherwise the URL is just printed so you can start the viewer later.
+
+See [`ui/README.md`](ui/README.md) for the HTTP API, port configuration, and test commands.
 
 ## Documentation
 
