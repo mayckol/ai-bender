@@ -45,24 +45,57 @@ func Render(r discovery.Result, now time.Time) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Write renders and atomically installs the new constitution at projectRoot, archiving any prior
-// constitution under .bender/artifacts/constitution/<timestamp>.md. Returns the absolute path written.
+// Write renders the new constitution and installs it at projectRoot.
+//
+// Archive + write happens ONLY when the new rendered content differs substantively from the
+// current file (ignoring the created_at / tool_version frontmatter lines that would otherwise
+// change on every run). Re-running `bender init` on an unchanged project is a true no-op:
+// no archive created, no current file rewritten. This matches the user-expected flow:
+//
+//  1. First run → no prior exists → write current.
+//  2. Subsequent run with identical content → no-op.
+//  3. Subsequent run with real changes → archive current → write new.
+//
+// Returns the absolute path to the current constitution (written fresh or left alone).
 func Write(projectRoot string, r discovery.Result, now time.Time) (string, error) {
 	if err := os.MkdirAll(filepath.Join(projectRoot, ".bender/artifacts"), 0o755); err != nil {
 		return "", err
 	}
 	currentPath := filepath.Join(projectRoot, currentRel)
-	if err := archivePrior(projectRoot, currentPath, now); err != nil {
-		return "", err
-	}
-	body, err := Render(r, now)
+	newBody, err := Render(r, now)
 	if err != nil {
 		return "", err
 	}
-	if err := writeFileAtomic(currentPath, body); err != nil {
+	if existing, err := os.ReadFile(currentPath); err == nil {
+		if bytes.Equal(normaliseForDiff(existing), normaliseForDiff(newBody)) {
+			// Content is substantively identical — skip archive + write.
+			return currentPath, nil
+		}
+		// Something changed; archive the current before overwriting.
+		if err := archivePrior(projectRoot, currentPath, now); err != nil {
+			return "", err
+		}
+	}
+	if err := writeFileAtomic(currentPath, newBody); err != nil {
 		return "", err
 	}
 	return currentPath, nil
+}
+
+// normaliseForDiff strips the frontmatter lines that change on every run (created_at,
+// tool_version) so Write() can detect true content changes without false positives.
+// The comparison is line-based and preserves every non-metadata line verbatim.
+func normaliseForDiff(body []byte) []byte {
+	var out bytes.Buffer
+	for _, line := range bytes.Split(body, []byte("\n")) {
+		trimmed := bytes.TrimLeft(line, " \t")
+		if bytes.HasPrefix(trimmed, []byte("created_at:")) || bytes.HasPrefix(trimmed, []byte("tool_version:")) {
+			continue
+		}
+		out.Write(line)
+		out.WriteByte('\n')
+	}
+	return out.Bytes()
 }
 
 func archivePrior(projectRoot, currentPath string, now time.Time) error {

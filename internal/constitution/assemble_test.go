@@ -76,9 +76,13 @@ func TestWrite_ArchivesPriorRevision(t *testing.T) {
 		t.Fatalf("expected no revisions after first write, got %d", len(revs))
 	}
 
-	// Second write: prior is moved into .bender/artifacts/constitution/<ts>.md.
+	// Second write with DIFFERENT content: prior is moved into .bender/artifacts/constitution/<ts>.md.
+	// (v0.2.1 no-ops identical rewrites; we need a real content change to trigger archiving.)
 	now2 := now.Add(time.Hour)
-	if _, err := Write(root, discovery.Result{}, now2); err != nil {
+	changed := discovery.Result{
+		Stack: discovery.StackInfo{Language: "Go"},
+	}
+	if _, err := Write(root, changed, now2); err != nil {
 		t.Fatalf("second write: %v", err)
 	}
 	revs, _ = os.ReadDir(filepath.Join(root, ".bender/artifacts", "constitution"))
@@ -101,12 +105,18 @@ func TestWrite_CollisionSuffix(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, ".bender/artifacts", "constitution", "2026-04-16T14-03-22.md"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// First write installs current.
-	if _, err := Write(root, discovery.Result{}, now); err != nil {
+	// First write installs current (with the Go stack).
+	if _, err := Write(root, discovery.Result{Stack: discovery.StackInfo{Language: "Go"}}, now); err != nil {
 		t.Fatal(err)
 	}
-	// Second write at the same instant must archive with -1 suffix.
-	if _, err := Write(root, discovery.Result{}, now); err != nil {
+	// Second write at the same instant with DIFFERENT content — forces an archive.
+	// (Writing the same content twice is a no-op after v0.2.1; we need a real content change
+	// to trigger the collision path.)
+	changed := discovery.Result{
+		Stack:        discovery.StackInfo{Language: "Go"},
+		Dependencies: []discovery.Dependency{{Name: "example.com/foo", Version: "v1.0.0"}},
+	}
+	if _, err := Write(root, changed, now); err != nil {
 		t.Fatal(err)
 	}
 	revs, _ := os.ReadDir(filepath.Join(root, ".bender/artifacts", "constitution"))
