@@ -35,7 +35,7 @@ func newRootCmd() *cobra.Command {
 registry, validates the catalog, and inspects on-disk session artifacts. The slash commands
 (/cry, /plan, /tdd, /ghu, /implement) are markdown files Claude Code reads and executes;
 this binary itself does not invoke any LLM.`,
-		Version:       version.Version,
+		Version:       version.Resolve(),
 		SilenceUsage:  true,
 		SilenceErrors: false,
 	}
@@ -61,7 +61,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print bender version and exit",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			_, err := fmt.Println(version.Version)
+			_, err := fmt.Println(version.Resolve())
 			return err
 		},
 	}
