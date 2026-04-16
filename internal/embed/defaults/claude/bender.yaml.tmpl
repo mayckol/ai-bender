@@ -1,0 +1,13 @@
+# Per-project bender settings. Created on `bender init`. Edit freely; `bender sync-defaults`
+# will not overwrite this file unless you pass --force.
+#
+# Per-agent overrides (apply after the agent's frontmatter is loaded):
+#
+# agents:
+#   crafter:
+#     skills:
+#       add: [project-specific-migration-check]
+#       remove: [check-data-model]
+#     write_scope:
+#       deny_add: ["internal/legacy/**"]
+agents: {}

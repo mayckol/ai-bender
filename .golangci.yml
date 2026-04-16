@@ -1,0 +1,35 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  disable-all: true
+  enable:
+    - errcheck
+    - govet
+    - gofmt
+    - goimports
+    - ineffassign
+    - revive
+    - staticcheck
+    - unused
+
+linters-settings:
+  revive:
+    rules:
+      - name: var-naming
+      - name: package-comments
+      - name: exported
+        arguments: ["disableStutteringCheck"]
+      - name: indent-error-flow
+      - name: error-return
+      - name: error-naming
+      - name: error-strings
+
+issues:
+  exclude-dirs:
+    - tests/integration/fixtures
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - revive
