@@ -1,8 +1,8 @@
 ---
 name: ghu
 user-invocable: true
-argument-hint: "[--from=<spec>] [--only=<task-id>] [--abort-on-failure]"
-context: bg
+argument-hint: "[--bg | --inline] [--from=<spec>] [--only=<task-id>] [--abort-on-failure]"
+context: fg
 description: "Execute the approved plan — implement, test, lint, review, and report. The only stage that writes code."
 provides: [stage, execute]
 stages: [ghu]
@@ -23,6 +23,32 @@ Decompose the approved task list, dispatch work to specialised agents, and produ
 ```text
 $ARGUMENTS
 ```
+
+## Execution Mode — READ FIRST
+
+`/ghu` supports two execution modes, selected by flags in `$ARGUMENTS`:
+
+- **`--bg` (default)** — Isolated-subagent mode. The workflow runs inside a forked `Agent` context so the main conversation is not polluted with file reads, tool outputs, and agent orchestration. This is the recommended mode for full runs.
+- **`--inline`** — Inline mode. The workflow runs directly in the current conversation. Use this for debugging, short scoped runs (`--only=<task>`), or when you explicitly want to observe each step.
+
+### Dispatcher (what the MAIN conversation does)
+
+**Step 0 — Before doing anything else, parse `$ARGUMENTS` and branch:**
+
+1. If `$ARGUMENTS` contains `--inline` → skip to the "Workflow" section below and execute it directly in this conversation.
+2. Otherwise (default, or `--bg` explicitly) → delegate to a subagent:
+   - Invoke the **Agent tool** exactly once with:
+     - `subagent_type: general-purpose`
+     - `run_in_background: true`
+     - `description`: `"ghu background run"`
+     - `prompt`: a self-contained message that includes (a) the full body of this SKILL.md from the "Workflow" section onward, (b) the user's `$ARGUMENTS` (with `--bg` stripped), and (c) the absolute working directory.
+   - After launching, print to the user exactly:
+     - The new session ID (generated before launch).
+     - The target report path (`.bender/artifacts/ghu/run-<timestamp>-report.md`).
+     - A note that execution is running in the background and they will be notified on completion.
+   - **Exit the main turn.** Do NOT execute the Workflow section in the main conversation when delegating.
+
+The main conversation's sole responsibility in `--bg` mode is to dispatch and report the launch. All orchestration, file writes, and agent invocations happen inside the forked subagent.
 
 ## Pre-Execution Checks
 
