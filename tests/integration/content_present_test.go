@@ -14,7 +14,7 @@ import (
 
 // TestSlashCommands_PresentAndParse: T050.
 func TestSlashCommands_PresentAndParse(t *testing.T) {
-	want := []string{"cry", "plan", "tdd", "ghu", "implement", "bender-doctor"}
+	want := []string{"cry", "plan", "tdd", "ghu", "implement", "bender-doctor", "bender-bootstrap"}
 	for _, name := range want {
 		t.Run(name, func(t *testing.T) {
 			data, err := fs.ReadFile(embedded.FS(), path.Join("claude/skills", name, "SKILL.md"))
@@ -28,7 +28,9 @@ func TestSlashCommands_PresentAndParse(t *testing.T) {
 			if s.Name != name {
 				t.Fatalf("frontmatter name mismatch: got %q want %q", s.Name, name)
 			}
-			if !strings.Contains(s.Body, "$ARGUMENTS") && name != "bender-doctor" {
+			// $ARGUMENTS is required only for argument-taking commands. The two binary-wrapper
+			// skills (bender-doctor, bender-bootstrap) take no arguments.
+			if !strings.Contains(s.Body, "$ARGUMENTS") && name != "bender-doctor" && name != "bender-bootstrap" {
 				t.Errorf("%s: expected an $ARGUMENTS reference in the body so Claude can substitute user input", name)
 			}
 		})
@@ -44,8 +46,8 @@ func TestAllSkills_Parse(t *testing.T) {
 	if len(warnings) > 0 {
 		t.Logf("warnings (informational):\n  %s", strings.Join(warnings, "\n  "))
 	}
-	// Lean catalog: 6 slash commands + 20 worker skills (2 per agent × 10 agents).
-	const wantMin, wantMax = 24, 30
+	// Lean catalog: 7 slash commands + 20 worker skills (2 per agent × 10 agents).
+	const wantMin, wantMax = 25, 31
 	if cat.Len() < wantMin || cat.Len() > wantMax {
 		t.Fatalf("expected default skill count in [%d, %d], got %d", wantMin, wantMax, cat.Len())
 	}

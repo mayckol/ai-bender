@@ -291,6 +291,10 @@ Refuses to start if any required upstream artifact is missing. With `--abort-on-
 
 Wrapper around `bender doctor`. Runs the binary's catalog walker via the shell and summarises the output for the user with a recommendation (healthy / warnings present / blocking errors present).
 
+#### `/bender-bootstrap`
+
+Fills the three constitution sections (`Purpose`, `Conventions`, `Glossary`) that `bender init` marks `_pending: true`. Reads README + manifests + a sample of source files, synthesises the missing sections, archives the prior constitution under `artifacts/constitution/<timestamp>.md`, and writes the new one. Run this once after `bender init` (and re-run any time the codebase changes shape enough that the conventions or glossary should be revisited).
+
 ### Default agents (subagents Claude invokes during `/ghu`)
 
 | Agent | Purpose | Write scope |
