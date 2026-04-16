@@ -16,11 +16,16 @@ import (
 const SchemaVersion = 1
 
 // State mirrors the on-disk state.json snapshot per `contracts/session.md`.
+//
+// CompletedAt is optional and set only once the session reaches a terminal status
+// (completed | failed). When present, `bender sessions list` uses it (rather than
+// the last event timestamp) as the authoritative end time for the duration column.
 type State struct {
 	SchemaVersion   int       `json:"schema_version"`
 	SessionID       string    `json:"session_id"`
 	Command         string    `json:"command"`
 	StartedAt       time.Time `json:"started_at"`
+	CompletedAt     time.Time `json:"completed_at,omitzero"`
 	Status          string    `json:"status"` // running | completed | failed
 	SourceArtifacts []string  `json:"source_artifacts,omitempty"`
 	SkillsInvoked   []string  `json:"skills_invoked,omitempty"`

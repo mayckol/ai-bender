@@ -55,6 +55,37 @@ func TestLoadState_AcceptsValid(t *testing.T) {
 	}
 }
 
+// TestLoadState_CompletedAt round-trips the optional completed_at field added in v0.3.1.
+// Skills emit this when the session reaches a terminal status; absence is tolerated so
+// state.json files written by v0.3.0 still parse cleanly.
+func TestLoadState_CompletedAt(t *testing.T) {
+	dir := t.TempDir()
+	stateDir := filepath.Join(dir, ".bender", "sessions", "2026-04-16T14-03-22-xyz")
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := `{
+  "schema_version": 1,
+  "session_id": "2026-04-16T14-03-22-xyz",
+  "command": "/cry",
+  "started_at": "2026-04-16T14:03:22Z",
+  "completed_at": "2026-04-16T14:03:58Z",
+  "status": "completed"
+}
+`
+	if err := os.WriteFile(filepath.Join(stateDir, "state.json"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := LoadState(stateDir)
+	if err != nil {
+		t.Fatalf("LoadState: %v", err)
+	}
+	want := time.Date(2026, 4, 16, 14, 3, 58, 0, time.UTC)
+	if !s.CompletedAt.Equal(want) {
+		t.Fatalf("completed_at: got %v want %v", s.CompletedAt, want)
+	}
+}
+
 func TestList_ComputesDuration(t *testing.T) {
 	root := t.TempDir()
 	plantSession(t, root, "2026-04-16T14-03-22-abc")
