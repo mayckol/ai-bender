@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'preact/hooks';
 
+import { AgentFilter } from '../components/AgentFilter.tsx';
 import { EventRow } from '../components/EventRow.tsx';
 import { FindingsPanel } from '../components/FindingsPanel.tsx';
 import { Layout } from '../components/Layout.tsx';
@@ -10,6 +11,7 @@ import {
   type SessionExport,
   type SessionState,
 } from '../lib/api.ts';
+import { distinctAgents, responsibleAgent } from '../lib/agents.ts';
 import { subscribeSSE } from '../lib/sse.ts';
 
 interface Props { params: { id: string }; }
@@ -20,9 +22,35 @@ export function SessionTimeline({ params }: Props) {
   const [events, setEvents] = useState<BenderEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [agentFilter, setAgentFilter] = useState<Set<string> | null>(null);
 
   const frozen = state?.status === 'completed' || state?.status === 'failed';
   const liveClass = frozen ? 'frozen' : connected ? 'connected' : '';
+
+  const agents = useMemo(() => distinctAgents(events), [events]);
+  const agentCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const ev of events) {
+      const a = responsibleAgent(ev);
+      m.set(a, (m.get(a) ?? 0) + 1);
+    }
+    return m;
+  }, [events]);
+  const visibleEvents = useMemo(() => {
+    if (agentFilter === null || agentFilter.size === 0) return events;
+    return events.filter((ev) => agentFilter.has(responsibleAgent(ev)));
+  }, [events, agentFilter]);
+
+  function toggleAgent(a: string) {
+    setAgentFilter((prev) => {
+      const next = new Set(prev ?? agents);
+      if (next.has(a)) next.delete(a);
+      else next.add(a);
+      if (next.size === agents.length) return null; // all selected → no filter
+      if (next.size === 0) return null;             // none selected → show all
+      return next;
+    });
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -118,12 +146,24 @@ export function SessionTimeline({ params }: Props) {
           )}
 
           <div class="card">
-            <h2>Timeline ({events.length} events)</h2>
+            <h2>
+              Timeline ({visibleEvents.length}
+              {visibleEvents.length !== events.length && <> of {events.length}</>} events)
+            </h2>
+            <AgentFilter
+              agents={agents}
+              active={agentFilter}
+              counts={agentCounts}
+              onToggle={toggleAgent}
+              onClear={() => setAgentFilter(null)}
+            />
             <div class="event-log">
-              {events.length === 0 ? (
-                <div class="empty">Waiting for events…</div>
+              {visibleEvents.length === 0 ? (
+                <div class="empty">
+                  {events.length === 0 ? 'Waiting for events…' : 'No events match the current filter.'}
+                </div>
               ) : (
-                events.map((ev, i) => <EventRow key={i} event={ev} />)
+                visibleEvents.map((ev, i) => <EventRow key={i} event={ev} />)
               )}
             </div>
           </div>

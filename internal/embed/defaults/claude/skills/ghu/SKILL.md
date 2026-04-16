@@ -66,14 +66,17 @@ Run any `hooks.before_ghu`.
      - `error: missing required upstream artifact: <name>. Run /plan and /plan confirm first.`
      - Exit. Do **not** create a partial session.
 
-2. **Honor `--only=<task>`** to scope to a single task (same as `/implement`).
+2. **Detect TDD mode.** Glob `.bender/artifacts/plan/tests/**/*.md`. If the glob is non-empty AND every matched file's frontmatter has `status: approved`, set **`tdd_mode = true`** for the remainder of this run. Record the decision with an `orchestrator_decision` event (`decision_type: "execution_mode"`, payload `mode: "tdd"` or `mode: "plain"`, plus `scaffold_count`). Skip this step if there are no scaffolds (proceed in plain mode).
 
-3. **Honor `--abort-on-failure`** to halt on the first task failure (default: continue and mark blocked).
+3. **Honor `--only=<task>`** to scope to a single task (same as `/implement`).
 
-4. **Create a session directory** under `.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with the task decomposition).
+4. **Honor `--abort-on-failure`** to halt on the first task failure (default: continue and mark blocked).
 
-5. **Walk the default execution graph** (overridable per command file):
+5. **Create a session directory** under `.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with the task decomposition).
 
+6. **Walk the execution graph**, which depends on `tdd_mode`:
+
+   **Plain mode** (no approved scaffolds):
    ```
    scout (map codebase) → architect (validate approach)
    ↓
@@ -88,9 +91,37 @@ Run any `hooks.before_ghu`.
    final report
    ```
 
-   For each agent invocation:
+   **TDD mode** (approved scaffolds present) — Red → Green → Refactor:
+   ```
+   scout (map codebase) → architect (validate approach)
+   ↓
+   surgeon (if refactor needed)
+   ↓
+   [RED] tester materialises executable tests from the prose scaffolds and RUNS them
+          • tests MUST fail (or not compile) at this point — emit finding_reported(severity: info, category: "tdd_red")
+            describing what's failing and why
+          • if ANY test unexpectedly PASSES before implementation, emit finding_reported(severity: medium,
+            category: "tdd_bogus_green") flagging the specific test — it probably does not assert the new behavior
+   ↓
+   [GREEN] crafter implements until the RED tests pass
+          • crafter MUST re-run the tester's suite after each meaningful edit
+          • on green, emit finding_reported(severity: info, category: "tdd_green") with the duration and test count
+   ↓
+   [REFACTOR] surgeon/crafter cleanup pass — tests stay green
+   ↓
+   linter (autofix + report)
+   ↓
+   reviewer ∥ sentinel ∥ benchmarker ∥ scribe
+   ↓
+   final report (flag the TDD mode in the summary header)
+   ```
+
+   In TDD mode, crafter and tester are **sequential**, not parallel. Tests lead.
+
+   For each agent invocation (both modes):
    - Use the **Agent tool** with `subagent_type=<agent-name>` to invoke it (the agent definitions are at `.claude/agents/<name>.md`).
-   - Pass the relevant task IDs, affected files, and acceptance criteria in the agent's prompt.
+   - Pass the relevant task IDs, affected files, acceptance criteria, **and — in TDD mode — the paths of the scaffold files this agent should consume**.
+   - **Attribution:** every event emitted during this invocation MUST carry `payload.agent: "<agent-name>"` so the viewer and `bender sessions validate` can thread events by responsible agent. This applies to `skill_invoked`, `skill_completed`, `skill_failed`, `file_changed`, `finding_reported`, `agent_progress`, plus `orchestrator_decision` events whose decision concerns a specific agent (use `payload.dispatched_agent`).
    - Emit `agent_started`, `agent_progress` (as the agent reports back), `agent_completed` / `agent_failed` / `agent_blocked`.
 
 6. **Enforce write scopes**:

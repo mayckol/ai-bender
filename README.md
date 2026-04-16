@@ -295,7 +295,7 @@ Optional. Mirrors the source tree under `artifacts/plan/tests/` with prose-only 
 
 #### `/ghu [--bg | --inline] [--from=<spec>] [--only=<task>] [--abort-on-failure]`
 
-Execute the approved plan. The only stage that writes code. Walks the default execution graph (scout → architect → optional surgeon → crafter ∥ tester → linter → reviewer ∥ sentinel ∥ benchmarker ∥ scribe → final report) and produces:
+Execute the approved plan. The only stage that writes code. If `/tdd` produced approved scaffolds under `.bender/artifacts/plan/tests/`, `/ghu` switches into **TDD mode** (Red → Green → Refactor): tester materialises executable tests from the scaffolds and runs them until they fail, crafter then implements until they pass, a surgeon cleanup pass keeps tests green. Otherwise it walks the plain graph (scout → architect → optional surgeon → crafter ∥ tester → linter → reviewer ∥ sentinel ∥ benchmarker ∥ scribe → final report). Both paths produce:
 - Source-tree mutations within each agent's declared write scope.
 - `artifacts/ghu/run-<ts>-report.md` final report.
 - `artifacts/ghu/{reviews,security,perf}/<ts>/` per-agent outputs.
@@ -425,7 +425,7 @@ bender server stop
 Open `http://localhost:4317/`:
 
 - `/` — session list with live updates when new sessions appear.
-- `/sessions/<id>` — live timeline: event stream, findings panel, file-changed summary, report link. Freezes on `session_completed`.
+- `/sessions/<id>` — live timeline: event stream with a coloured agent badge on every row, clickable agent filter chips, findings panel, file-changed summary, report link. Freezes on `session_completed`.
 
 When `/ghu --bg` dispatches, the SKILL.md instructs Claude Code to print the viewer URL (`http://localhost:4317/sessions/<id>`) alongside the session id and report path. If the server is running, the dispatcher also issues a platform `open` / `xdg-open` once; otherwise the URL is just printed so you can start the viewer later with `bender server`.
 
