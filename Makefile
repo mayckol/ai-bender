@@ -1,4 +1,4 @@
-.PHONY: build test lint install smoke clean fmt tidy
+.PHONY: build test lint install smoke clean fmt tidy ui-assets ui-test
 
 GO            ?= go
 GOLANGCI_LINT ?= golangci-lint
@@ -32,5 +32,11 @@ install: build
 smoke: build
 	$(GO) test -race -count=1 -tags=smoke ./tests/integration/...
 
+ui-assets:
+	cd ui && bun install --silent && bun run build:embed
+
+ui-test:
+	cd ui && bun install --silent && bun test
+
 clean:
-	rm -rf bin/ dist/ coverage.txt coverage.html
+	rm -rf bin/ dist/ coverage.txt coverage.html ui/node_modules/

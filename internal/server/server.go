@@ -1,0 +1,332 @@
+package server
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/mayckol/ai-bender/internal/event"
+	"github.com/mayckol/ai-bender/internal/session"
+)
+
+// Config controls server behavior. ProjectRoot is the project whose
+// `.bender/sessions` directory is watched and served.
+type Config struct {
+	ProjectRoot string
+	Addr        string // e.g. ":4317"
+}
+
+// New builds the HTTP handler tree. The server itself is constructed by the
+// caller via http.Server so they can control timeouts, TLS, and lifecycle.
+func New(cfg Config) (http.Handler, error) {
+	if cfg.ProjectRoot == "" {
+		return nil, errors.New("server: ProjectRoot is required")
+	}
+	root, err := filepath.Abs(cfg.ProjectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("server: resolve project root: %w", err)
+	}
+
+	indexHTML, err := clientFS.ReadFile("assets/index.html")
+	if err != nil {
+		return nil, fmt.Errorf("server: load index.html: %w", err)
+	}
+	clientJS, err := clientFS.ReadFile("assets/client.js")
+	if err != nil {
+		return nil, fmt.Errorf("server: load client.js: %w", err)
+	}
+	stylesCSS, err := clientFS.ReadFile("assets/styles.css")
+	if err != nil {
+		return nil, fmt.Errorf("server: load styles.css: %w", err)
+	}
+
+	h := &handler{
+		root:      root,
+		indexHTML: indexHTML,
+		clientJS:  clientJS,
+		stylesCSS: stylesCSS,
+	}
+	return h, nil
+}
+
+type handler struct {
+	root      string
+	indexHTML []byte
+	clientJS  []byte
+	stylesCSS []byte
+}
+
+var sessionRoute = regexp.MustCompile(`^/api/sessions/([^/]+)(?:/(stream|report))?$`)
+
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+
+	switch {
+	case path == "/api/sessions":
+		h.listSessions(w, r)
+		return
+	case path == "/api/sessions/stream":
+		h.streamSessions(w, r)
+		return
+	case path == "/client.js":
+		writeBytes(w, "application/javascript; charset=utf-8", h.clientJS)
+		return
+	case path == "/styles.css":
+		writeBytes(w, "text/css; charset=utf-8", h.stylesCSS)
+		return
+	}
+
+	if m := sessionRoute.FindStringSubmatch(path); m != nil {
+		id := m[1]
+		suffix := m[2]
+		dir, err := session.ResolveSessionDir(h.root, id)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("session not found: %s", id), http.StatusNotFound)
+			return
+		}
+		switch suffix {
+		case "stream":
+			h.streamSession(w, r, id, dir)
+		case "report":
+			h.serveReport(w, r, id)
+		default:
+			h.snapshotSession(w, r, dir)
+		}
+		return
+	}
+
+	// Catch-all: serve the SPA shell for any other path so client-side routing works.
+	writeBytes(w, "text/html; charset=utf-8", h.indexHTML)
+}
+
+// GET /api/sessions
+func (h *handler) listSessions(w http.ResponseWriter, _ *http.Request) {
+	listings, err := session.List(h.root)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	summaries := make([]sessionSummary, 0, len(listings))
+	for _, l := range listings {
+		summaries = append(summaries, sessionSummary{
+			ID:         l.ID,
+			State:      l.State,
+			DurationMS: l.Duration.Milliseconds(),
+		})
+	}
+	writeJSON(w, http.StatusOK, summaries)
+}
+
+// GET /api/sessions/:id
+func (h *handler) snapshotSession(w http.ResponseWriter, _ *http.Request, dir string) {
+	snap, err := loadSnapshot(dir)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, snap)
+}
+
+// GET /api/sessions/:id/stream (SSE)
+func (h *handler) streamSession(w http.ResponseWriter, r *http.Request, _ string, dir string) {
+	sw, err := newSSEWriter(w)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer sw.close()
+
+	snap, err := loadSnapshot(dir)
+	if err != nil {
+		_ = sw.writeRaw("error", err.Error())
+		return
+	}
+	if err := sw.write("snapshot", snap); err != nil {
+		return
+	}
+
+	ctx := r.Context()
+	stop := make(chan struct{})
+
+	tail, err := newSessionTail(
+		dir,
+		func(ev *event.Event) {
+			if err := sw.write("event", ev); err != nil {
+				select {
+				case <-stop:
+				default:
+					close(stop)
+				}
+			}
+		},
+		func(s *session.State) {
+			if err := sw.write("state-patch", s); err != nil {
+				select {
+				case <-stop:
+				default:
+					close(stop)
+				}
+			}
+		},
+		func(err error) {
+			_ = sw.writeRaw("error", err.Error())
+		},
+	)
+	if err != nil {
+		_ = sw.writeRaw("error", err.Error())
+		return
+	}
+	defer tail.Stop()
+
+	select {
+	case <-ctx.Done():
+	case <-stop:
+	}
+}
+
+// GET /api/sessions/stream (SSE, list-level)
+func (h *handler) streamSessions(w http.ResponseWriter, r *http.Request) {
+	sw, err := newSSEWriter(w)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer sw.close()
+
+	listings, err := session.List(h.root)
+	if err != nil {
+		_ = sw.writeRaw("error", err.Error())
+		return
+	}
+	summaries := make([]sessionSummary, 0, len(listings))
+	for _, l := range listings {
+		summaries = append(summaries, sessionSummary{
+			ID:         l.ID,
+			State:      l.State,
+			DurationMS: l.Duration.Milliseconds(),
+		})
+	}
+	if err := sw.write("snapshot", summaries); err != nil {
+		return
+	}
+
+	ctx := r.Context()
+	stop := make(chan struct{})
+	rw, err := newRootWatcher(
+		session.SessionsRoot(h.root),
+		func(id string) {
+			if err := sw.write("session-added", map[string]string{"id": id}); err != nil {
+				select {
+				case <-stop:
+				default:
+					close(stop)
+				}
+			}
+		},
+		func(err error) {
+			_ = sw.writeRaw("error", err.Error())
+		},
+	)
+	if err != nil {
+		_ = sw.writeRaw("error", err.Error())
+		return
+	}
+	defer rw.Stop()
+
+	select {
+	case <-ctx.Done():
+	case <-stop:
+	}
+}
+
+// GET /api/sessions/:id/report
+func (h *handler) serveReport(w http.ResponseWriter, _ *http.Request, id string) {
+	path := reportPath(h.root, id)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			http.Error(w, "report not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeBytes(w, "text/markdown; charset=utf-8", data)
+}
+
+// Session id suffix stripping — the /ghu skill writes
+// `.bender/artifacts/ghu/run-<timestamp>-report.md` where <timestamp> matches
+// the leading `YYYY-MM-DDTHH-MM-SS` portion of the session id.
+var sessionTSHead = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})`)
+
+func reportPath(projectRoot, sessionID string) string {
+	ts := sessionID
+	if m := sessionTSHead.FindStringSubmatch(sessionID); len(m) > 0 {
+		ts = m[1]
+	}
+	return filepath.Join(projectRoot, ".bender", "artifacts", "ghu", fmt.Sprintf("run-%s-report.md", ts))
+}
+
+type sessionSummary struct {
+	ID         string        `json:"id"`
+	State      session.State `json:"state"`
+	DurationMS int64         `json:"duration_ms"`
+}
+
+type sessionSnapshot struct {
+	State  session.State  `json:"state"`
+	Events []*event.Event `json:"events"`
+}
+
+func loadSnapshot(dir string) (*sessionSnapshot, error) {
+	state, err := session.LoadState(dir)
+	if err != nil {
+		return nil, err
+	}
+	events, err := readEvents(filepath.Join(dir, "events.jsonl"))
+	if err != nil {
+		return nil, err
+	}
+	return &sessionSnapshot{State: *state, Events: events}, nil
+}
+
+func readEvents(path string) ([]*event.Event, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return []*event.Event{}, nil
+		}
+		return nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+	out := make([]*event.Event, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		ev, perr := event.UnmarshalEvent([]byte(line))
+		if perr != nil {
+			continue // Skip malformed; CLI `bender sessions validate` surfaces them.
+		}
+		out = append(out, ev)
+	}
+	return out, nil
+}
+
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(payload)
+}
+
+func writeBytes(w http.ResponseWriter, contentType string, data []byte) {
+	w.Header().Set("Content-Type", contentType)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
