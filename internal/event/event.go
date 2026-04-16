@@ -1,4 +1,4 @@
-// Package event defines the v1 event schema used in artifacts/.bender/sessions/<id>/events.jsonl.
+// Package event defines the v1 event schema used in .bender/sessions/<id>/events.jsonl.
 // Events are written by Claude Code (or any equivalent client) when executing a slash command;
 // the bender binary reads them via `bender sessions show/export`.
 package event

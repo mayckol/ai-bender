@@ -13,9 +13,9 @@ provides: [check, data-model, validation]
 stages: [plan, ghu]
 applies_to: [feature, architectural]
 inputs:
-  - artifacts/plan/data-model-*.md
+  - .bender/artifacts/plan/data-model-*.md
 outputs:
-  - artifacts/.bender/checks/data-model-<timestamp>.json
+  - .bender/checks/data-model-<timestamp>.json
 ---
 # check-data-model
 Compare the resolved data model against the plan.

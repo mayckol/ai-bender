@@ -37,7 +37,7 @@ Flag deprecated or misused crypto in the change set:
 
 ## Output
 
-Each finding goes to `artifacts/ghu/security/<run-timestamp>/<finding-id>.md` with a one-paragraph attack-vector explanation. Emit `finding_reported` events for the run report to aggregate.
+Each finding goes to `.bender/artifacts/ghu/security/<run-timestamp>/<finding-id>.md` with a one-paragraph attack-vector explanation. Emit `finding_reported` events for the run report to aggregate.
 
 ## What you DO NOT do
 

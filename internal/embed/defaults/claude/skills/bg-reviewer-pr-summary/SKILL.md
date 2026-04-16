@@ -9,7 +9,7 @@ applies_to: [any]
 
 # bg-reviewer-pr-summary
 
-Render a PR description for the change set produced this run. Write it to `artifacts/ghu/reviews/<run-timestamp>/pr-summary.md` so reviewers (or CI gh-cli automation) can paste it directly into the pull request.
+Render a PR description for the change set produced this run. Write it to `.bender/artifacts/ghu/reviews/<run-timestamp>/pr-summary.md` so reviewers (or CI gh-cli automation) can paste it directly into the pull request.
 
 ## Sections (in order)
 

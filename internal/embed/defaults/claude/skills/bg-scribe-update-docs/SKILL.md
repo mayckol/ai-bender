@@ -27,9 +27,9 @@ For every changed public symbol, update its doc comment / spec entry:
 Append one entry per merged change set, using the project's existing format (Keep a Changelog, Conventional Commits, etc.). Do not invent a new format.
 
 ### 4. Constitution glossary
-If the change introduces new domain terms (new types, new concepts surfacing in public APIs), add them to `artifacts/constitution.md` Glossary section: `term → one-line definition`.
+If the change introduces new domain terms (new types, new concepts surfacing in public APIs), add them to `.bender/artifacts/constitution.md` Glossary section: `term → one-line definition`.
 
 ## What you DO NOT do
 
 - Modify production code. Your write scope only allows docs and markdown.
-- Update specs or artifacts at `artifacts/specs/**` / `artifacts/plan/**` (those have their own owners).
+- Update specs or artifacts at `.bender/artifacts/specs/**` / `.bender/artifacts/plan/**` (those have their own owners).

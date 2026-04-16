@@ -8,10 +8,10 @@ provides: [stage, execute]
 stages: [ghu]
 applies_to: [any]
 inputs:
-  - artifacts/specs/*.md
-  - artifacts/plan/tasks-*.md
+  - .bender/artifacts/specs/*.md
+  - .bender/artifacts/plan/tasks-*.md
 outputs:
-  - artifacts/ghu/run-<timestamp>-report.md
+  - .bender/artifacts/ghu/run-<timestamp>-report.md
 ---
 
 # `/ghu` — Execute the Plan
@@ -31,9 +31,9 @@ Run any `hooks.before_ghu`.
 ## Workflow
 
 1. **Resolve the source artifacts**:
-   - The latest **approved** spec at `artifacts/specs/<slug>-<ts>.md`.
-   - The matching task list at `artifacts/plan/tasks-<ts>.md`.
-   - Optionally, test scaffolds at `artifacts/plan/tests/`.
+   - The latest **approved** spec at `.bender/artifacts/specs/<slug>-<ts>.md`.
+   - The matching task list at `.bender/artifacts/plan/tasks-<ts>.md`.
+   - Optionally, test scaffolds at `.bender/artifacts/plan/tests/`.
    - If anything required is missing, print:
      - `error: missing required upstream artifact: <name>. Run /plan and /plan confirm first.`
      - Exit. Do **not** create a partial session.
@@ -42,7 +42,7 @@ Run any `hooks.before_ghu`.
 
 3. **Honor `--abort-on-failure`** to halt on the first task failure (default: continue and mark blocked).
 
-4. **Create a session directory** under `artifacts/.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with the task decomposition).
+4. **Create a session directory** under `.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with the task decomposition).
 
 5. **Walk the default execution graph** (overridable per command file):
 
@@ -76,7 +76,7 @@ Run any `hooks.before_ghu`.
    - Default: a failed agent is marked blocked; siblings continue; the final report enumerates the blocker.
    - Strict (`--abort-on-failure`): halt pending agents on first failure.
 
-9. **Write the final report** at `artifacts/ghu/run-<timestamp>-report.md` with frontmatter and the sections from `contracts/artifacts.md` §5.
+9. **Write the final report** at `.bender/artifacts/ghu/run-<timestamp>-report.md` with frontmatter and the sections from `contracts/artifacts.md` §5.
 
 10. **Emit `session_completed`** with `status: completed | failed`, `duration_ms`, `agents_summary`.
 

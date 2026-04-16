@@ -2,22 +2,22 @@
 name: bender-bootstrap
 user-invocable: true
 context: fg
-description: "Fill the AI-required sections of artifacts/constitution.md (purpose, conventions, glossary) by reading the codebase. Archives the prior constitution."
+description: "Fill the AI-required sections of .bender/artifacts/constitution.md (purpose, conventions, glossary) by reading the codebase. Archives the prior constitution."
 provides: [stage, bootstrap, refine, constitution]
 stages: [bootstrap]
 applies_to: [any]
 inputs:
-  - artifacts/constitution.md
+  - .bender/artifacts/constitution.md
 outputs:
-  - artifacts/constitution.md
-  - artifacts/constitution/<timestamp>.md
+  - .bender/artifacts/constitution.md
+  - .bender/artifacts/constitution/<timestamp>.md
 ---
 
 # `/bender-bootstrap` — Refine the Constitution
 
 `bender init` populates the constitution's mechanical sections (stack, structure, tests, lint, build, dependencies) using heuristic file probes. The three sections it can't fill on its own — **Purpose**, **Conventions**, **Glossary** — are marked `_pending: true` and wait for this skill.
 
-This skill reads the codebase, fills those three sections, archives the prior constitution under `artifacts/constitution/<timestamp>.md`, and writes the new one.
+This skill reads the codebase, fills those three sections, archives the prior constitution under `.bender/artifacts/constitution/<timestamp>.md`, and writes the new one.
 
 ## Pre-Execution Checks
 
@@ -27,14 +27,14 @@ Run any `hooks.before_bootstrap` from `.specify/extensions.yml`.
 
 ### 1. Confirm the constitution exists and has pending sections
 
-- If `artifacts/constitution.md` does not exist, print:
-  - `error: artifacts/constitution.md not found. Run \`bender init\` first.`
+- If `.bender/artifacts/constitution.md` does not exist, print:
+  - `error: .bender/artifacts/constitution.md not found. Run \`bender init\` first.`
   - Stop.
 - Read the file. Locate every section whose body contains `_pending: true`. The expected ones are `## Purpose`, `## Conventions`, `## Glossary`. If none are pending, print "constitution already complete; nothing to do" and stop.
 
 ### 2. Create a session directory
 
-- Path: `artifacts/.bender/sessions/<timestamp>-<rand3>/`.
+- Path: `.bender/sessions/<timestamp>-<rand3>/`.
 - Write `state.json`: `{ schema_version: 1, command: "/bender-bootstrap", status: "running", started_at: "<iso>" }`.
 - Append `session_started` and `stage_started` events to `events.jsonl`.
 
@@ -82,8 +82,8 @@ Aim for 5–15 entries. If the codebase has none beyond CS terms, write `_no rec
 
 ### 6. Archive and write
 
-1. Move the current `artifacts/constitution.md` to `artifacts/constitution/<timestamp>.md` (use the same `YYYY-MM-DDTHH-MM-SS` format `bender init` uses; collision suffix `-1`, `-2`, … if needed).
-2. Write the new constitution to `artifacts/constitution.md` with the three filled sections substituted in.
+1. Move the current `.bender/artifacts/constitution.md` to `.bender/artifacts/constitution/<timestamp>.md` (use the same `YYYY-MM-DDTHH-MM-SS` format `bender init` uses; collision suffix `-1`, `-2`, … if needed).
+2. Write the new constitution to `.bender/artifacts/constitution.md` with the three filled sections substituted in.
 3. Update the frontmatter `created_at` and `tool_version` (mark `tool_version: bender-bootstrap-refined`).
 
 ### 7. Emit events

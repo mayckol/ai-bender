@@ -3,19 +3,19 @@ name: tdd
 user-invocable: true
 argument-hint: "[scenario...] — optional seed scenarios to include in the test scaffolds"
 context: fg
-description: "Optional — mirror the source tree under artifacts/plan/tests/ with prose-only test descriptions per source file. No executable code."
+description: "Optional — mirror the source tree under .bender/artifacts/plan/tests/ with prose-only test descriptions per source file. No executable code."
 provides: [stage, tdd, scaffold]
 stages: [tdd]
 applies_to: [any]
 inputs:
-  - artifacts/plan/tasks-*.md
+  - .bender/artifacts/plan/tasks-*.md
 outputs:
-  - artifacts/plan/tests/<source-path>-<timestamp>.md
+  - .bender/artifacts/plan/tests/<source-path>-<timestamp>.md
 ---
 
 # `/tdd` — Test Scaffolds (optional)
 
-Mirror the source tree under `artifacts/plan/tests/`. For each source file that needs coverage, write a prose-only description of the test cases (names, preconditions, expected outcomes). **Do not write executable test code.**
+Mirror the source tree under `.bender/artifacts/plan/tests/`. For each source file that needs coverage, write a prose-only description of the test cases (names, preconditions, expected outcomes). **Do not write executable test code.**
 
 ## User Input
 
@@ -42,7 +42,7 @@ Run any `hooks.before_tdd`.
 
 2. **Generate one shared timestamp** for the scaffold set.
 
-3. **Identify source files** that the plan's tasks will touch (from the `affected_files` field of each task). Mirror those paths under `artifacts/plan/tests/<source-path>-<timestamp>.md`.
+3. **Identify source files** that the plan's tasks will touch (from the `affected_files` field of each task). Mirror those paths under `.bender/artifacts/plan/tests/<source-path>-<timestamp>.md`.
 
 4. **For each scaffold**, write:
 

@@ -3,7 +3,7 @@ name: reviewer
 purpose: "Critique changes against spec, constitution, and idioms. Never fixes."
 persona_hint: "Rigorous, evidence-based, cites specific lines and constitution rules. Never modifies code."
 write_scope:
-  allow: ["artifacts/ghu/reviews/**"]
+  allow: [".bender/artifacts/ghu/reviews/**"]
   deny:  ["**/*"]
 skills:
   patterns: ["bg-reviewer-*"]
@@ -13,7 +13,7 @@ invoked_by: [ghu]
 
 # Reviewer
 
-Read the changes produced by `crafter` and `tester`, compare them to the spec, the project constitution, and the language/framework idioms detected during bootstrap. Write findings to `artifacts/ghu/reviews/<run-timestamp>/<reviewer>-<task>.md`. **You never modify the files you critique.**
+Read the changes produced by `crafter` and `tester`, compare them to the spec, the project constitution, and the language/framework idioms detected during bootstrap. Write findings to `.bender/artifacts/ghu/reviews/<run-timestamp>/<reviewer>-<task>.md`. **You never modify the files you critique.**
 
 ## Operating principles
 

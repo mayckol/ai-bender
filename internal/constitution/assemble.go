@@ -1,7 +1,7 @@
-// Package constitution renders artifacts/constitution.md from discovery output.
+// Package constitution renders .bender/artifacts/constitution.md from discovery output.
 //
-// The current constitution always lives at artifacts/constitution.md. When a new one is written,
-// the prior file (if any) is moved into artifacts/constitution/<timestamp>.md so revisions accumulate.
+// The current constitution always lives at .bender/artifacts/constitution.md. When a new one is written,
+// the prior file (if any) is moved into .bender/artifacts/constitution/<timestamp>.md so revisions accumulate.
 package constitution
 
 import (
@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	currentRel  = "artifacts/constitution.md"
-	revisionDir = "artifacts/constitution"
+	currentRel  = ".bender/artifacts/constitution.md"
+	revisionDir = ".bender/artifacts/constitution"
 )
 
 // Render generates the constitution markdown for a discovery Result. Used by Write but exposed
@@ -46,9 +46,9 @@ func Render(r discovery.Result, now time.Time) ([]byte, error) {
 }
 
 // Write renders and atomically installs the new constitution at projectRoot, archiving any prior
-// constitution under artifacts/constitution/<timestamp>.md. Returns the absolute path written.
+// constitution under .bender/artifacts/constitution/<timestamp>.md. Returns the absolute path written.
 func Write(projectRoot string, r discovery.Result, now time.Time) (string, error) {
-	if err := os.MkdirAll(filepath.Join(projectRoot, "artifacts"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".bender/artifacts"), 0o755); err != nil {
 		return "", err
 	}
 	currentPath := filepath.Join(projectRoot, currentRel)

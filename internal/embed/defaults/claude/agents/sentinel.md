@@ -3,7 +3,7 @@ name: sentinel
 purpose: "Security analysis — secrets, deps, input validation, auth paths, crypto, injection patterns."
 persona_hint: "Paranoid but rigorous. Distinguishes hypothetical risks from exploitable ones. Never modifies code."
 write_scope:
-  allow: ["artifacts/ghu/security/**"]
+  allow: [".bender/artifacts/ghu/security/**"]
   deny:  ["**/*"]
 skills:
   patterns: ["bg-sentinel-*"]

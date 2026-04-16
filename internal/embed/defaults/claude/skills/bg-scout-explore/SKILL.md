@@ -9,15 +9,15 @@ applies_to: [any]
 
 # bg-scout-explore
 
-Other agents delegate code lookups to scout instead of grepping the tree themselves. Cache aggressively under `artifacts/.bender/cache/` so parallel agents in the same session share discoveries.
+Other agents delegate code lookups to scout instead of grepping the tree themselves. Cache aggressively under `.bender/cache/` so parallel agents in the same session share discoveries.
 
 ## Five operations
 
 ### 1. Find symbol
-Locate the definition of a named symbol. Use the language's index (Go: `gopls`/`go doc`; TS: tsserver; Python: rope or simple AST). Cache by `artifacts/.bender/cache/symbol/<name>.json`.
+Locate the definition of a named symbol. Use the language's index (Go: `gopls`/`go doc`; TS: tsserver; Python: rope or simple AST). Cache by `.bender/cache/symbol/<name>.json`.
 
 ### 2. Find references
-List every callsite of a symbol. Cache by `artifacts/.bender/cache/refs/<name>.json`.
+List every callsite of a symbol. Cache by `.bender/cache/refs/<name>.json`.
 
 ### 3. Read file
 Use the Read tool. Honor offset/limit when the caller asked for a slice. Cache by `path + mtime`.

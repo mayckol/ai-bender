@@ -8,13 +8,13 @@ provides: [stage, plan, design]
 stages: [plan]
 applies_to: [any]
 inputs:
-  - artifacts/cry/*.md
+  - .bender/artifacts/cry/*.md
 outputs:
-  - artifacts/specs/<slug>-<timestamp>.md
-  - artifacts/plan/data-model-<timestamp>.md
-  - artifacts/plan/api-contract-<timestamp>.md
-  - artifacts/plan/risk-assessment-<timestamp>.md
-  - artifacts/plan/tasks-<timestamp>.md
+  - .bender/artifacts/specs/<slug>-<timestamp>.md
+  - .bender/artifacts/plan/data-model-<timestamp>.md
+  - .bender/artifacts/plan/api-contract-<timestamp>.md
+  - .bender/artifacts/plan/risk-assessment-<timestamp>.md
+  - .bender/artifacts/plan/tasks-<timestamp>.md
 ---
 
 # `/plan` — Produce a Plan Set
@@ -46,7 +46,7 @@ Use that artifact as the source.
 
 ### Otherwise
 
-1. Find the most recent **approved** capture artifact under `artifacts/cry/`. If none exists, print:
+1. Find the most recent **approved** capture artifact under `.bender/artifacts/cry/`. If none exists, print:
    - `error: no approved capture artifact found. Run \`/cry "<your request>"\` and \`/cry confirm\` first.`
    - Exit. Do **not** create empty artifacts.
 
@@ -56,20 +56,20 @@ Use that artifact as the source.
 
 2. **Create the session directory** and emit `session_started` + `stage_started`.
 
-3. **Author the spec** at `artifacts/specs/<slug>-<timestamp>.md`:
+3. **Author the spec** at `.bender/artifacts/specs/<slug>-<timestamp>.md`:
    - Frontmatter: `from_capture, status: draft, created_at, tool_version`.
    - Body: User Scenarios & Testing, Requirements (functional + key entities), Success Criteria, Assumptions.
 
-4. **Author the data model** at `artifacts/plan/data-model-<timestamp>.md`:
+4. **Author the data model** at `.bender/artifacts/plan/data-model-<timestamp>.md`:
    - Entities, fields, validation rules, relationships, state transitions.
 
-5. **Author the API contract** at `artifacts/plan/api-contract-<timestamp>.md` *(only if the plan involves an externally consumable interface)*:
+5. **Author the API contract** at `.bender/artifacts/plan/api-contract-<timestamp>.md` *(only if the plan involves an externally consumable interface)*:
    - Endpoints / CLI grammar / GraphQL types / etc., as appropriate.
 
-6. **Author the risk assessment** at `artifacts/plan/risk-assessment-<timestamp>.md`:
+6. **Author the risk assessment** at `.bender/artifacts/plan/risk-assessment-<timestamp>.md`:
    - Risks (severity × likelihood), mitigations, open risks.
 
-7. **Author the task list** at `artifacts/plan/tasks-<timestamp>.md`:
+7. **Author the task list** at `.bender/artifacts/plan/tasks-<timestamp>.md`:
    - One section per task: id (T001+), title, description, agent_hints, depends_on, affected_files, acceptance.
    - Reject cyclic dependencies before writing.
 

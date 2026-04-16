@@ -1,6 +1,6 @@
 // Package session reads and exports the on-disk session artifacts produced by Claude Code
 // (or any client) when executing a slash command. Sessions live under
-// artifacts/.bender/sessions/<id>/ and contain state.json + events.jsonl.
+// .bender/sessions/<id>/ and contain state.json + events.jsonl.
 package session
 
 import (

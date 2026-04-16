@@ -1,7 +1,7 @@
 ---
 name: fg-tester-scaffold
 context: fg
-description: "Mirror the source tree under artifacts/plan/tests/ with prose-only test descriptions per source file. Drives /tdd."
+description: "Mirror the source tree under .bender/artifacts/plan/tests/ with prose-only test descriptions per source file. Drives /tdd."
 provides: [tdd, scaffold, propose, coverage]
 stages: [tdd]
 applies_to: [any]
@@ -14,7 +14,7 @@ Drives the optional `/tdd` stage. Mirrors the source files the plan's tasks will
 ## Steps
 
 1. **Resolve the latest approved plan**. Read its `affected_files` glob per task.
-2. **Mirror the source tree** under `artifacts/plan/tests/<source-path>-<ts>.md` for each file that needs coverage.
+2. **Mirror the source tree** under `.bender/artifacts/plan/tests/<source-path>-<ts>.md` for each file that needs coverage.
 3. **Propose test cases** for each scaffold:
    - Per acceptance criterion in the source task: at least one positive case and one negative case.
    - Boundary conditions: nil/empty/zero/max/overflow inputs.

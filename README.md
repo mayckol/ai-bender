@@ -334,34 +334,28 @@ Fills the three constitution sections (`Purpose`, `Conventions`, `Glossary`) tha
 
 The fallbacks produce the same artifact layout the binary does. AI-driven slash commands (`/cry`, `/plan`, …) live in `.claude/skills/` and are executed by Claude Code itself — there's no shell fallback for those because the AI is the executor.
 
-## What's in `.claude/` after `bender init`
+## Project layout after `bender init`
+
+`bender init` touches exactly three top-level locations: `.claude/` (configuration for Claude Code), `.bender/` (everything bender produces), and `bender.yaml` (per-project overrides).
 
 ```
-.claude/
-├── agents/                 # 10 default subagents (crafter, tester, reviewer, linter,
-│                           #   architect, scribe, scout, sentinel, benchmarker, surgeon)
-├── skills/
-│   ├── cry/SKILL.md        # the /cry slash-command instructions
-│   ├── plan/SKILL.md
-│   ├── tdd/SKILL.md
-│   ├── ghu/SKILL.md
-│   ├── implement/SKILL.md
-│   ├── bender-doctor/SKILL.md
-│   ├── fg-bootstrap-detect-*/SKILL.md   (10)
-│   ├── fg-cry-*/SKILL.md                (5)
-│   ├── fg-plan-*/SKILL.md               (7)
-│   ├── fg-tester-*/SKILL.md             (7, TDD scaffolds)
-│   ├── bg-crafter-*/SKILL.md            (7)
-│   ├── bg-tester-*/SKILL.md             (6)
-│   ├── bg-linter-*/SKILL.md             (5)
-│   ├── bg-reviewer-*/SKILL.md           (5)
-│   ├── bg/fg-architect-*/SKILL.md       (5)
-│   ├── bg-scribe-*/SKILL.md             (5)
-│   ├── bg-scout-*/SKILL.md              (6)
-│   ├── bg-sentinel-*/SKILL.md           (6)
-│   ├── bg-benchmarker-*/SKILL.md        (5)
-│   └── bg-surgeon-*/SKILL.md            (5)
-└── groups.yaml             # bootstrap, pre-implementation-checks, security-sweep
+your-project/
+├── .claude/                        # configuration consumed by Claude Code
+│   ├── agents/                     #   10 default subagents
+│   ├── skills/                     #   7 slash-command skills + 20 worker skills
+│   └── groups.yaml                 #   named selectors
+├── .bender/                        # everything bender produces — the only bender root
+│   ├── artifacts/                  #   human-readable pipeline output (commit this)
+│   │   ├── constitution.md         #     current constitution
+│   │   ├── constitution/<ts>.md    #     prior revisions
+│   │   ├── cry/<slug>-<ts>.md      #     /cry output
+│   │   ├── specs/<slug>-<ts>.md    #     /plan output
+│   │   ├── plan/{data-model,api-contract,risk-assessment,tasks}-<ts>.md
+│   │   ├── plan/tests/…            #     /tdd scaffolds
+│   │   └── ghu/run-<ts>-report.md + {reviews,security,perf}/
+│   ├── sessions/<id>/              #   state.json + events.jsonl (gitignored)
+│   └── cache/                      #   scout caches (gitignored)
+└── bender.yaml                     # per-project agent/skill overrides
 bender.yaml                 # per-project agent/skill overrides (lives at project root)
 artifacts/
 └── constitution.md         # heuristic project profile; AI-required sections marked pending

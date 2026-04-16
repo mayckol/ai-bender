@@ -14,10 +14,10 @@ Read the change set produced by `crafter` and `tester`, compare it to the approv
 ## Four critique dimensions
 
 ### 1. vs spec
-For each section of the approved spec at `artifacts/specs/<slug>-<ts>.md`, verify the implementation honors it. Cite spec section + file + line range when the implementation drifts.
+For each section of the approved spec at `.bender/artifacts/specs/<slug>-<ts>.md`, verify the implementation honors it. Cite spec section + file + line range when the implementation drifts.
 
 ### 2. vs constitution
-Read `artifacts/constitution.md`. For each rule in Conventions (naming, error handling, DI, architecture pattern), verify the change respects it. Constitution rules win over personal style preferences.
+Read `.bender/artifacts/constitution.md`. For each rule in Conventions (naming, error handling, DI, architecture pattern), verify the change respects it. Constitution rules win over personal style preferences.
 
 ### 3. Language / framework idioms
 Use the constitution's Stack section to know which idioms apply:
@@ -35,7 +35,7 @@ Critique the new tests authored this run:
 
 ## Output
 
-Write findings to `artifacts/ghu/reviews/<run-timestamp>/critique-<task>.md`. Each finding includes:
+Write findings to `.bender/artifacts/ghu/reviews/<run-timestamp>/critique-<task>.md`. Each finding includes:
 
 ```yaml
 - id: <stable id>

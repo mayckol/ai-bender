@@ -71,17 +71,17 @@ func TestWrite_ArchivesPriorRevision(t *testing.T) {
 	if _, err := Write(root, discovery.Result{}, now); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
-	revs, _ := os.ReadDir(filepath.Join(root, "artifacts", "constitution"))
+	revs, _ := os.ReadDir(filepath.Join(root, ".bender/artifacts", "constitution"))
 	if len(revs) != 0 {
 		t.Fatalf("expected no revisions after first write, got %d", len(revs))
 	}
 
-	// Second write: prior is moved into artifacts/constitution/<ts>.md.
+	// Second write: prior is moved into .bender/artifacts/constitution/<ts>.md.
 	now2 := now.Add(time.Hour)
 	if _, err := Write(root, discovery.Result{}, now2); err != nil {
 		t.Fatalf("second write: %v", err)
 	}
-	revs, _ = os.ReadDir(filepath.Join(root, "artifacts", "constitution"))
+	revs, _ = os.ReadDir(filepath.Join(root, ".bender/artifacts", "constitution"))
 	if len(revs) != 1 {
 		t.Fatalf("expected one revision after second write, got %d", len(revs))
 	}
@@ -95,10 +95,10 @@ func TestWrite_CollisionSuffix(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 4, 16, 14, 3, 22, 0, time.UTC)
 	// Manually plant an existing revision so the next archive must use a collision suffix.
-	if err := os.MkdirAll(filepath.Join(root, "artifacts", "constitution"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, ".bender/artifacts", "constitution"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "artifacts", "constitution", "2026-04-16T14-03-22.md"), []byte("old"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".bender/artifacts", "constitution", "2026-04-16T14-03-22.md"), []byte("old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// First write installs current.
@@ -109,7 +109,7 @@ func TestWrite_CollisionSuffix(t *testing.T) {
 	if _, err := Write(root, discovery.Result{}, now); err != nil {
 		t.Fatal(err)
 	}
-	revs, _ := os.ReadDir(filepath.Join(root, "artifacts", "constitution"))
+	revs, _ := os.ReadDir(filepath.Join(root, ".bender/artifacts", "constitution"))
 	if len(revs) != 2 {
 		t.Fatalf("expected two revisions, got %d", len(revs))
 	}

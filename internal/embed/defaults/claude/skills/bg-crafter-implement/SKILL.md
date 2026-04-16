@@ -15,8 +15,8 @@ Apply the smallest patch that satisfies the task's acceptance criteria. Then ver
 
 1. **Read every file you intend to touch** before editing. Use the Read tool, not assumptions.
 2. **Apply the patch** with the smallest possible diff. Prefer extending existing functions/types over creating new parallel ones.
-3. **Verify against the data model** at `artifacts/plan/data-model-<ts>.md`: every type/struct/schema you introduced or modified must match.
-4. **Verify against the API contract** at `artifacts/plan/api-contract-<ts>.md` (if present): every exposed endpoint, CLI flag, or interface signature must match.
+3. **Verify against the data model** at `.bender/artifacts/plan/data-model-<ts>.md`: every type/struct/schema you introduced or modified must match.
+4. **Verify against the API contract** at `.bender/artifacts/plan/api-contract-<ts>.md` (if present): every exposed endpoint, CLI flag, or interface signature must match.
 5. **Verify interface implementations**: for each declared interface, the concrete type's method set must satisfy it. Partial implementations are an error.
 6. **Run code generation** (`go generate`, codegen scripts) when the change requires it; commit generated outputs.
 7. **Resolve write-scope conflicts**: if two tasks touch the same file path, sequence writes; if the conflict is logical (not just textual), emit a `finding_reported` event and stop.
