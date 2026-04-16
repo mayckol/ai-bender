@@ -10,8 +10,8 @@ func TestFS_ContainsClaudeRoot(t *testing.T) {
 	if _, err := fs.Stat(root, "claude/groups.yaml"); err != nil {
 		t.Fatalf("expected claude/groups.yaml in embedded FS, got: %v", err)
 	}
-	if _, err := fs.Stat(root, "claude/bender.yaml.tmpl"); err != nil {
-		t.Fatalf("expected claude/bender.yaml.tmpl in embedded FS, got: %v", err)
+	if _, err := fs.Stat(root, "claude/config.yaml.tmpl"); err != nil {
+		t.Fatalf("expected claude/config.yaml.tmpl in embedded FS, got: %v", err)
 	}
 }
 

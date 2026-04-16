@@ -40,7 +40,7 @@ this binary itself does not invoke any LLM.`,
 		SilenceErrors: false,
 	}
 	root.PersistentFlags().StringVar(&g.project, "project", "", "registered project name to operate on")
-	root.PersistentFlags().StringVar(&g.config, "config", "", "path to project bender.yaml (defaults to <project>/bender.yaml)")
+	root.PersistentFlags().StringVar(&g.config, "config", "", "path to project config file (defaults to <project>/.bender/config.yaml)")
 	root.PersistentFlags().BoolVar(&g.noColor, "no-color", false, "disable color output")
 	root.PersistentFlags().BoolVar(&g.quiet, "quiet", false, "suppress informational logs")
 	root.PersistentFlags().BoolVar(&g.verbose, "verbose", false, "print loader and resolver decisions to stderr")
