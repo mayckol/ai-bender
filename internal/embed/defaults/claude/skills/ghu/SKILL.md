@@ -82,6 +82,86 @@ Run any `hooks.before_ghu`.
 
 11. **Print** the run summary: tasks attempted/completed, files changed, tests added, findings, blockers, report path.
 
+## Observability shape — emit verbatim, do NOT invent fields
+
+Same envelope as `/cry`, `/plan`, `/tdd`. Stage is **`ghu`** for every event.
+
+### session_started
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"user","name":"claude-code"},"type":"session_started","payload":{"command":"/ghu","invoker":"<$USER>","working_dir":"<abs path>","registered_projects":[],"parallelism":1}}
+```
+
+### stage_started
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"ghu"},"type":"stage_started","payload":{"stage":"ghu","inputs":[".bender/artifacts/specs/<slug>-<ts>.md",".bender/artifacts/plan/tasks-<ts>.md"]}}
+```
+
+### orchestrator_decision (emit per task_decomposition, agent_assignment, graph_node_transition)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"task_decomposition","tasks":["T001","T002","..."]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"agent_assignment","agent":"crafter"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"graph_node_transition","from_node":"scout","to_node":"architect"}}
+```
+
+### agent_started / agent_progress / agent_completed (or agent_failed / agent_blocked)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_started","payload":{"agent":"crafter","task_ids":["T004"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_progress","payload":{"percent":42,"current_step":"applying patch","completed":["read","plan"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_completed","payload":{"agent":"crafter","task_ids":["T004"],"duration_ms":<int>}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_failed","payload":{"agent":"crafter","task_ids":["T004"],"duration_ms":<int>,"error":"<human-readable reason>"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_blocked","payload":{"agent":"crafter","task_ids":["T004"],"error":"blocked by finding from sentinel"}}
+```
+
+### skill_invoked / skill_completed / skill_failed (inside each agent)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"skill_invoked","payload":{"skill":"bg-crafter-implement","agent":"crafter"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"skill_completed","payload":{"skill":"bg-crafter-implement","agent":"crafter","duration_ms":<int>,"outputs":["pkg/foo/bar.go"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"skill_failed","payload":{"skill":"bg-crafter-verify-build","agent":"crafter","duration_ms":<int>,"error":"<stderr summary>"}}
+```
+
+### file_changed (one per modified file)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"file_changed","payload":{"path":"pkg/foo/bar.go","lines_added":42,"lines_removed":7,"agent":"crafter"}}
+```
+
+### finding_reported (from reviewer/sentinel/benchmarker)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"reviewer"},"type":"finding_reported","payload":{"finding_id":"R-001","severity":"medium","category":"review","title":"<one line>","description":"<full>","location":{"path":"pkg/foo/bar.go","line_start":12,"line_end":18}}}
+```
+
+### artifact_written (final report + per-agent outputs)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"ghu"},"type":"artifact_written","payload":{"path":".bender/artifacts/ghu/run-<ts>-report.md","stage":"ghu","checksum":"<sha256>","bytes":<int>}}
+```
+
+### stage_completed / session_completed
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"ghu"},"type":"stage_completed","payload":{"stage":"ghu","inputs":["<spec path>","<tasks path>"],"outputs":["<run report path>"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"completed","duration_ms":<int>,"agents_summary":[{"agent":"crafter","status":"completed"},{"agent":"tester","status":"completed"}]}}
+```
+
+### state.json (overwrite in place)
+```json
+{
+  "schema_version": 1,
+  "session_id": "<session_id>",
+  "command": "/ghu",
+  "started_at": "<iso>",
+  "completed_at": "<iso, once terminal>",
+  "status": "running|completed|failed",
+  "source_artifacts": ["<spec path>","<tasks path>"],
+  "skills_invoked": ["<skill names actually invoked>"],
+  "files_changed": <int>,
+  "findings_count": <int>
+}
+```
+
+### Forbidden shortcuts
+- `ts` / `event` / inlined payload fields / missing `schema_version|session_id|actor|payload` — all WRONG.
+- Stage names other than `ghu` — WRONG.
+- `kind` on `artifact_written` — WRONG.
+- `session_resumed` — WRONG (always fresh sessions).
+
 ## Post-Execution
 
 Run any `hooks.after_ghu`.

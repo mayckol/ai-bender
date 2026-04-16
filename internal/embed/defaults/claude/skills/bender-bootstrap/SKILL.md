@@ -88,14 +88,75 @@ Aim for 5–15 entries. If the codebase has none beyond CS terms, write `_no rec
 
 ### 7. Emit events
 
-- `artifact_written` for both the archived old constitution and the new one (each with sha256 + byte count).
-- `skill_completed` for each filled section.
-- `stage_completed` and `session_completed` (status: completed) at the end.
-- Update `state.json` to `status: completed` plus `files_changed: 2` and `findings_count: 0`.
+Use the exact shapes in "Observability shape" below.
+
+Order:
+1. `session_started`
+2. `stage_started` (stage = `bootstrap`)
+3. `skill_invoked` + matching `skill_completed` for each filled section (`fill_purpose`, `fill_conventions`, `fill_glossary`)
+4. `artifact_written` for the archived old constitution (first — the one you're about to overwrite)
+5. `artifact_written` for the new refined constitution
+6. `stage_completed`
+7. `session_completed`
+
+Then update `state.json` with `status: completed`, `completed_at`, `files_changed: 2`, `findings_count: 0`.
 
 ### 8. Print
 
 Tell the user what was filled, what was archived, and the next suggested command (typically `/cry "<your first feature request>"`).
+
+## Observability shape — emit verbatim, do NOT invent fields
+
+Same envelope as every other slash command. Stage is **`bootstrap`** for every event.
+
+### session_started
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"user","name":"claude-code"},"type":"session_started","payload":{"command":"/bender-bootstrap","invoker":"<$USER>","working_dir":"<abs path>"}}
+```
+
+### stage_started
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"bootstrap"},"type":"stage_started","payload":{"stage":"bootstrap","inputs":[".bender/artifacts/constitution.md"]}}
+```
+
+### skill_invoked / skill_completed (one pair per filled section)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"bootstrap"},"type":"skill_invoked","payload":{"skill":"fill_purpose","agent":"bootstrap"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"bootstrap"},"type":"skill_completed","payload":{"skill":"fill_purpose","agent":"bootstrap","duration_ms":<int>,"outputs":[]}}
+```
+
+### artifact_written (two: archived old, then new current)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"bootstrap"},"type":"artifact_written","payload":{"path":".bender/artifacts/constitution/<ts>.md","stage":"bootstrap","checksum":"<sha256 of archived>","bytes":<int>}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"bootstrap"},"type":"artifact_written","payload":{"path":".bender/artifacts/constitution.md","stage":"bootstrap","checksum":"<sha256 of new>","bytes":<int>}}
+```
+
+### stage_completed / session_completed
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"bootstrap"},"type":"stage_completed","payload":{"stage":"bootstrap","inputs":[".bender/artifacts/constitution.md"],"outputs":[".bender/artifacts/constitution/<ts>.md",".bender/artifacts/constitution.md"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"completed","duration_ms":<int>,"agents_summary":[]}}
+```
+
+### state.json (overwrite in place)
+```json
+{
+  "schema_version": 1,
+  "session_id": "<session_id>",
+  "command": "/bender-bootstrap",
+  "started_at": "<iso>",
+  "completed_at": "<iso, once terminal>",
+  "status": "running|completed|failed",
+  "source_artifacts": [".bender/artifacts/constitution.md"],
+  "skills_invoked": ["fill_purpose","fill_conventions","fill_glossary"],
+  "files_changed": 2,
+  "findings_count": 0
+}
+```
+
+### Forbidden shortcuts
+- `ts` / `event` / inlined payload fields / missing `schema_version|session_id|actor|payload` — all WRONG.
+- Stage names like `bootstrap_constitution` — WRONG. Use `bootstrap`.
+- `kind` field on `artifact_written` (values like `archived_constitution`, `constitution`) — WRONG. The contract is `{path, stage, checksum, bytes}`. Claude can distinguish the two `artifact_written` events by their `payload.path`.
 
 ## Post-Execution
 

@@ -73,9 +73,79 @@ Use that artifact as the source.
    - One section per task: id (T001+), title, description, agent_hints, depends_on, affected_files, acceptance.
    - Reject cyclic dependencies before writing.
 
-8. **Emit events** for each artifact written (`artifact_written` with sha256 + byte count).
+8. **Emit events** for each artifact written — use the exact shapes in "Observability shape" below.
+   Order: `session_started` → `stage_started` → one `skill_invoked` + matching `skill_completed` per
+   sub-step (`spec_draft`, `data_model`, `api_contract` if applicable, `risk_assessment`,
+   `tasks_decompose`) → one `artifact_written` per artifact produced (5 total, or 4 if no API
+   contract) → `stage_completed` → `session_completed`.
 
 9. **Print** every artifact path produced and "next: `/plan confirm`".
+
+## Observability shape — emit verbatim, do NOT invent fields
+
+Same envelope as `/cry`. Stage is **`plan`** for every stage/skill/artifact event. The session_id is the directory name (e.g. `2026-04-16T19-22-14-770`).
+
+### session_started
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"user","name":"claude-code"},"type":"session_started","payload":{"command":"/plan","invoker":"<$USER>","working_dir":"<abs path>"}}
+```
+
+### stage_started
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"plan"},"type":"stage_started","payload":{"stage":"plan","inputs":[".bender/artifacts/cry/<slug>-<ts>.md"]}}
+```
+
+### skill_invoked / skill_completed (one pair per sub-step: spec_draft, data_model, api_contract, risk_assessment, tasks_decompose)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"plan"},"type":"skill_invoked","payload":{"skill":"<step>","agent":"architect"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"plan"},"type":"skill_completed","payload":{"skill":"<step>","agent":"architect","duration_ms":<int>,"outputs":["<artifact path>"]}}
+```
+
+### artifact_written (one per plan artifact)
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"plan"},"type":"artifact_written","payload":{"path":"<repo-relative>","stage":"plan","checksum":"<sha256>","bytes":<int>}}
+```
+
+### stage_completed
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"plan"},"type":"stage_completed","payload":{"stage":"plan","inputs":[".bender/artifacts/cry/<slug>-<ts>.md"],"outputs":["<spec path>","<data-model path>","<api-contract path or omit>","<risk-assessment path>","<tasks path>"]}}
+```
+
+### session_completed
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"completed","duration_ms":<int>,"agents_summary":[]}}
+```
+
+### state.json (overwrite in place)
+```json
+{
+  "schema_version": 1,
+  "session_id": "<session_id>",
+  "command": "/plan",
+  "started_at": "<iso>",
+  "completed_at": "<iso, once terminal>",
+  "status": "running|completed|failed",
+  "source_artifacts": [".bender/artifacts/cry/<slug>-<ts>.md"],
+  "skills_invoked": ["spec_draft","data_model","api_contract","risk_assessment","tasks_decompose"],
+  "files_changed": <int>,
+  "findings_count": 0
+}
+```
+
+### Forbidden shortcuts
+- `ts` instead of `timestamp`; `event` instead of `type`; payload fields inlined at the top level — all WRONG.
+- Stage names like `plan_set` — WRONG. Use `plan`.
+- `kind` field on `artifact_written` — WRONG. The contract is `{path, stage, checksum, bytes}`.
+- Missing `schema_version`, `session_id`, `actor`, or `payload` — WRONG.
+
+## /plan confirm: emit this event sequence
+
+A fresh session with its own `session_id`:
+1. `session_started` (payload.command = `/plan confirm`)
+2. `stage_started` (payload.stage = `plan`, payload.inputs = the 5 draft paths)
+3. 5 × `artifact_written` (one per plan-set file, new sha256 since `status: draft` → `approved`)
+4. `stage_completed`
+5. `session_completed`
 
 ## Post-Execution
 
