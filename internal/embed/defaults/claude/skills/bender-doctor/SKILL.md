@@ -1,5 +1,6 @@
 ---
 name: bender-doctor
+user-invocable: true
 context: fg
 description: "Validate the catalog using the bender binary; surface empty skill sets, broken selectors, missing tools, and override conflicts."
 provides: [stage, doctor, validation]

@@ -1,5 +1,7 @@
 ---
 name: cry
+user-invocable: true
+argument-hint: "<your request> — free-form description of a bug, feature, performance, or architectural change"
 context: fg
 description: "Capture intent — write a high-level capture artifact for a user request. Never designs, never implements."
 provides: [stage, capture, intent]

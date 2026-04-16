@@ -1,5 +1,7 @@
 ---
 name: plan
+user-invocable: true
+argument-hint: "[--from=<cry-artifact>] — produces a plan set from the latest approved capture (or the one you pass)"
 context: fg
 description: "Low-level design — produce a spec, data model, optional API contract, risk assessment, and decomposed task list under one shared timestamp."
 provides: [stage, plan, design]

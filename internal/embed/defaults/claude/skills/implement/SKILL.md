@@ -1,5 +1,7 @@
 ---
 name: implement
+user-invocable: true
+argument-hint: "<task-id-or-title> — e.g. T012 or a unique title substring"
 context: fg
 description: "Execute a single named task from the latest approved plan. Same as /ghu but scoped to one task."
 provides: [stage, execute, single-task]
