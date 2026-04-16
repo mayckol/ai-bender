@@ -1,13 +1,6 @@
 groups:
-  bootstrap:
-    description: "Run by `bender init` to refine sections of the constitution that the binary's heuristic discovery cannot fill."
-    select:
-      patterns: ["fg-bootstrap-detect-*"]
-    ordered: true
-    halt_on_failure: false
-
   pre-implementation-checks:
-    description: "Validations run before crafter begins writing code."
+    description: "Validations run before crafter begins writing code (e.g., data-model and api-contract checks)."
     select:
       tags:
         any_of: [check, validation]
@@ -16,7 +9,7 @@ groups:
     halt_on_failure: false
 
   security-sweep:
-    description: "Post-implementation security sweep run by sentinel during /ghu."
+    description: "Post-implementation security sweep run by sentinel during /ghu (static + runtime checks)."
     select:
       patterns: ["bg-sentinel-*"]
     ordered: true

@@ -44,8 +44,10 @@ func TestAllSkills_Parse(t *testing.T) {
 	if len(warnings) > 0 {
 		t.Logf("warnings (informational):\n  %s", strings.Join(warnings, "\n  "))
 	}
-	if cat.Len() < 60 {
-		t.Fatalf("expected ≥60 default skills, got %d", cat.Len())
+	// Lean catalog: 6 slash commands + 20 worker skills (2 per agent × 10 agents).
+	const wantMin, wantMax = 24, 30
+	if cat.Len() < wantMin || cat.Len() > wantMax {
+		t.Fatalf("expected default skill count in [%d, %d], got %d", wantMin, wantMax, cat.Len())
 	}
 	t.Logf("loaded %d default skills", cat.Len())
 }
@@ -88,7 +90,7 @@ func TestDefaultGroups_Parse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadFromFS: %v", err)
 	}
-	for _, want := range []string{"bootstrap", "pre-implementation-checks", "security-sweep"} {
+	for _, want := range []string{"pre-implementation-checks", "security-sweep"} {
 		if _, ok := groups[want]; !ok {
 			t.Errorf("missing default group %q", want)
 		}
