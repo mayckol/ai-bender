@@ -8,10 +8,10 @@ provides: [stage, execute, single-task]
 stages: [implement]
 applies_to: [any]
 inputs:
-  - artifacts/specs/*.md
-  - artifacts/plan/tasks-*.md
+  - .bender/artifacts/specs/*.md
+  - .bender/artifacts/plan/tasks-*.md
 outputs:
-  - artifacts/ghu/run-<timestamp>-report.md
+  - .bender/artifacts/ghu/run-<timestamp>-report.md
 ---
 
 # `/implement <task-id-or-title>` — Single-Task Execution
@@ -28,11 +28,11 @@ $ARGUMENTS
 
 1. **Required argument**: a task id (e.g., `T012`) or a unique substring of a task title.
 2. **Resolve** the latest approved plan; refuse if missing (`error: no approved plan; run /plan confirm first`).
-3. **Locate the task** in `artifacts/plan/tasks-<ts>.md`. If the argument matches multiple tasks, list them and refuse.
+3. **Locate the task** in `.bender/artifacts/plan/tasks-<ts>.md`. If the argument matches multiple tasks, list them and refuse.
 4. **Dispatch** exactly the agents implied by that task's `agent_hints` (or the orchestrator default if not declared).
 5. **Run the same execution graph as `/ghu`**, but pruned to the single task and its direct review/lint follow-ups.
 6. **Emit events** identically to `/ghu`.
-7. **Write the final report** at `artifacts/ghu/run-<timestamp>-report.md` covering only the executed task.
+7. **Write the final report** at `.bender/artifacts/ghu/run-<timestamp>-report.md` covering only the executed task.
 
 ## Notes
 

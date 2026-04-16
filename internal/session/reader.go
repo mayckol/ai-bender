@@ -23,7 +23,7 @@ type Listing struct {
 
 // SessionsRoot returns the absolute sessions directory inside projectRoot.
 func SessionsRoot(projectRoot string) string {
-	return filepath.Join(projectRoot, "artifacts", ".bender", "sessions")
+	return filepath.Join(projectRoot, ".bender", "sessions")
 }
 
 // List returns every session under projectRoot's session directory, in deterministic id-sorted order.

@@ -15,7 +15,7 @@ const sampleState = `{
   "command": "/ghu",
   "started_at": "2026-04-16T14:03:22Z",
   "status": "completed",
-  "source_artifacts": ["artifacts/specs/foo.md"],
+  "source_artifacts": [".bender/artifacts/specs/foo.md"],
   "files_changed": 7,
   "findings_count": 2
 }
@@ -28,7 +28,7 @@ const sampleEvents = `{"schema_version":1,"session_id":"2026-04-16T14-03-22-abc"
 
 func plantSession(t *testing.T, projectRoot, id string) string {
 	t.Helper()
-	dir := filepath.Join(projectRoot, "artifacts", ".bender", "sessions", id)
+	dir := filepath.Join(projectRoot, ".bender", "sessions", id)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

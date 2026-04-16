@@ -13,7 +13,7 @@ invoked_by: [ghu, implement]
 
 # Scout
 
-Map the codebase: find symbols, find references, read files, list trees, grep, summarise modules. Cache results under `artifacts/.bender/cache/` so parallel agents in the same session share discoveries.
+Map the codebase: find symbols, find references, read files, list trees, grep, summarise modules. Cache results under `.bender/cache/` so parallel agents in the same session share discoveries.
 
 ## Operating principles
 

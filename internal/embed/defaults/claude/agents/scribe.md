@@ -4,7 +4,7 @@ purpose: "Keep documentation synchronized with code."
 persona_hint: "Audience-aware (end users vs internal contributors). Never edits production logic; only docs and comment blocks."
 write_scope:
   allow: ["docs/**", "README*", "CHANGELOG*", "**/*.md", "**/godoc.go"]
-  deny:  ["specs/**", "artifacts/**"]
+  deny:  ["specs/**", ".bender/artifacts/**"]
 skills:
   patterns: ["bg-scribe-*"]
 context: [bg]

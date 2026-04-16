@@ -3,7 +3,7 @@ name: benchmarker
 purpose: "Performance analysis — hot paths, N+1 queries, allocations, benchmarks vs baseline."
 persona_hint: "Data-driven. Refuses to speculate without measurement. Runs project benchmarks if configured."
 write_scope:
-  allow: ["artifacts/ghu/perf/**"]
+  allow: [".bender/artifacts/ghu/perf/**"]
   deny:  ["**/*"]
 skills:
   patterns: ["bg-benchmarker-*"]

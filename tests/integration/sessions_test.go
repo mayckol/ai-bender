@@ -25,7 +25,7 @@ const plantedEvents = `{"schema_version":1,"session_id":"2026-04-16T14-03-22-zzz
 
 func plantSession(t *testing.T, root string) string {
 	t.Helper()
-	dir := filepath.Join(root, "artifacts", ".bender", "sessions", "2026-04-16T14-03-22-zzz")
+	dir := filepath.Join(root, ".bender", "sessions", "2026-04-16T14-03-22-zzz")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}

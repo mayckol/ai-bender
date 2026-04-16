@@ -9,7 +9,7 @@ applies_to: [any]
 
 # bg-benchmarker-measure
 
-Run the project's benchmarks if configured. Compare against the baseline (the most recent benchmark output committed under `artifacts/ghu/perf/baseline.json`, or whatever the project documents).
+Run the project's benchmarks if configured. Compare against the baseline (the most recent benchmark output committed under `.bender/artifacts/ghu/perf/baseline.json`, or whatever the project documents).
 
 ## Steps
 
@@ -32,4 +32,4 @@ Run the project's benchmarks if configured. Compare against the baseline (the mo
 
 ## Output
 
-Write the raw benchmark output to `artifacts/ghu/perf/<run-timestamp>/results.json` so future runs can diff against it.
+Write the raw benchmark output to `.bender/artifacts/ghu/perf/<run-timestamp>/results.json` so future runs can diff against it.

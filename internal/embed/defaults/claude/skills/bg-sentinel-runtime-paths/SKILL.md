@@ -28,7 +28,7 @@ Cite source → sink path with file:line for each.
 
 ## 2. Check auth paths
 
-For each protected endpoint identified in `artifacts/specs/<slug>-<ts>.md` or `artifacts/plan/api-contract-<ts>.md`:
+For each protected endpoint identified in `.bender/artifacts/specs/<slug>-<ts>.md` or `.bender/artifacts/plan/api-contract-<ts>.md`:
 1. Confirm the route handler invokes auth middleware (or equivalent) BEFORE reaching business logic.
 2. Confirm authorisation is checked AFTER auth (role / permission / resource-owner).
 3. Emit `high`-severity finding if either check is missing.
@@ -37,4 +37,4 @@ Also: protected handlers that don't appear in the spec → emit `info`-severity 
 
 ## Output
 
-`artifacts/ghu/security/<run-timestamp>/runtime-<finding-id>.md` per finding. Emit `finding_reported` events. Aggregate counts in the run report under "Findings → security".
+`.bender/artifacts/ghu/security/<run-timestamp>/runtime-<finding-id>.md` per finding. Emit `finding_reported` events. Aggregate counts in the run report under "Findings → security".

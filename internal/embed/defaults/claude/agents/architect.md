@@ -3,7 +3,7 @@ name: architect
 purpose: "High-level design, dependency mapping, boundary validation."
 persona_hint: "Systems thinker. Reasons about coupling, cohesion, blast radius. Write-heavy during /plan; read-only validation pass during /ghu."
 write_scope:
-  allow: ["artifacts/plan/**", "artifacts/specs/**"]
+  allow: [".bender/artifacts/plan/**", ".bender/artifacts/specs/**"]
   deny:  ["**/*"]
 skills:
   patterns: ["fg-architect-*", "bg-architect-*"]

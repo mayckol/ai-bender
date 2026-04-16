@@ -47,5 +47,5 @@ Thumbs.db
 .env.*.local
 
 # Local dev sessions and artifacts produced by bender itself when self-hosting
-artifacts/.bender/sessions/
-artifacts/.bender/cache/
+.bender/sessions/
+.bender/cache/

@@ -9,7 +9,7 @@ stages: [cry]
 applies_to: [any]
 inputs: []
 outputs:
-  - artifacts/cry/<slug>-<timestamp>.md
+  - .bender/artifacts/cry/<slug>-<timestamp>.md
 ---
 
 # `/cry` — Capture Intent
@@ -30,7 +30,7 @@ $ARGUMENTS
 
 ### If the user typed `/cry confirm`
 
-1. Find the most recent draft artifact under `artifacts/cry/`.
+1. Find the most recent draft artifact under `.bender/artifacts/cry/`.
 2. Update its frontmatter `status: draft` → `status: approved`.
 3. Print the path and suggest `/plan` as the next command.
 4. Append `stage_completed` to `events.jsonl`.
@@ -46,14 +46,14 @@ $ARGUMENTS
 
 2. **Find a predecessor**:
    - Look for the most recent existing capture artifact with the same slug.
-   - If found, set `previous: artifacts/cry/<that-file>` in the new artifact's frontmatter.
+   - If found, set `previous: .bender/artifacts/cry/<that-file>` in the new artifact's frontmatter.
 
 3. **Create the session directory**:
-   - `artifacts/.bender/sessions/<timestamp>-<rand3>/`
+   - `.bender/sessions/<timestamp>-<rand3>/`
    - Write `state.json` with `command: /cry, status: running, started_at: <iso>`.
    - Append a `session_started` event and a `stage_started` event to `events.jsonl`.
 
-4. **Write the artifact** at `artifacts/cry/<slug>-<timestamp>.md`:
+4. **Write the artifact** at `.bender/artifacts/cry/<slug>-<timestamp>.md`:
 
    ```markdown
    ---

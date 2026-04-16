@@ -9,7 +9,7 @@ applies_to: [any]
 
 # bg-crafter-verify-build
 
-Run the project's build command (resolved from `artifacts/constitution.md` Build / CI section). Compilation is a hard gate: if the build fails, the task is blocked and no downstream agent runs against this task's output.
+Run the project's build command (resolved from `.bender/artifacts/constitution.md` Build / CI section). Compilation is a hard gate: if the build fails, the task is blocked and no downstream agent runs against this task's output.
 
 ## Steps
 

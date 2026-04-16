@@ -22,7 +22,7 @@ The verification half of `bg-surgeon-refactor`. Always invoked around any refact
 
 ## Output
 
-Write the before/after test summaries to `artifacts/ghu/perf/<run-timestamp>/refactor-verify.md` (re-using the perf folder since it's already where structural-quality artifacts live; if a separate `artifacts/ghu/refactor/` is preferred in your project, override via the agent's write_scope).
+Write the before/after test summaries to `.bender/artifacts/ghu/perf/<run-timestamp>/refactor-verify.md` (re-using the perf folder since it's already where structural-quality artifacts live; if a separate `.bender/artifacts/ghu/refactor/` is preferred in your project, override via the agent's write_scope).
 
 ## Why this is its own skill
 
