@@ -8,7 +8,8 @@
     "dev": "bun run src/server/index.ts",
     "start": "NODE_ENV=production bun run src/server/index.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:embed": "bun build src/client/main.tsx --outfile ../internal/server/assets/client.js --target browser --minify && cp src/client/index.html ../internal/server/assets/index.html && cp src/client/styles.css ../internal/server/assets/styles.css"
   },
   "dependencies": {
     "preact": "^10.22.1",

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/bender-logo.png" alt="ai-bender" width="240" />
+</p>
+
 # ai-bender
 
 A spec-driven scaffold for Claude Code. `bender` is a Go CLI that installs a `.claude/` workspace into your projects and gives you slash commands you run inside Claude Code: `/cry`, `/plan`, `/tdd`, `/ghu`, `/implement`. Think Spec Kit's `/specify`, but with a multi-project workspace, a heuristic-discovered project constitution, and `bender doctor` for catalog validation.
@@ -407,13 +411,15 @@ agents:
 
 ## Real-time viewer
 
-`ui/` ships a small Bun + Preact server (`bender-ui`) that live-streams session events over Server-Sent Events. It reads `.bender/sessions/<id>/` directly — the same files the CLI reads — so there is no separate database and no migration. Designed for watching `/ghu --bg` runs as they unfold in a forked subagent context.
+The `bender` binary embeds a small local web viewer (`bender-ui`) that live-streams session events over Server-Sent Events. It reads `.bender/sessions/<id>/` directly — the same files the CLI reads — so there is no separate database and no migration. Designed for watching `/ghu --bg` runs as they unfold in a forked subagent context.
 
 ```bash
-cd ui
-bun install
-bun run dev --project /path/to/your/project
-# default port 4317; override with --port=<n> or BENDER_UI_PORT
+# From any project that has .bender/ in it:
+bender server                 # detaches, pid+log under .bender/
+bender server --port 4000     # custom port
+bender server --foreground    # stay attached (useful under systemd/launchd)
+bender server status
+bender server stop
 ```
 
 Open `http://localhost:4317/`:
@@ -421,9 +427,18 @@ Open `http://localhost:4317/`:
 - `/` — session list with live updates when new sessions appear.
 - `/sessions/<id>` — live timeline: event stream, findings panel, file-changed summary, report link. Freezes on `session_completed`.
 
-When `/ghu --bg` dispatches, the SKILL.md instructs Claude Code to print the viewer URL (`http://localhost:4317/sessions/<id>`) alongside the session id and report path. If the server is running, the dispatcher also issues a platform `open` / `xdg-open` once; otherwise the URL is just printed so you can start the viewer later.
+When `/ghu --bg` dispatches, the SKILL.md instructs Claude Code to print the viewer URL (`http://localhost:4317/sessions/<id>`) alongside the session id and report path. If the server is running, the dispatcher also issues a platform `open` / `xdg-open` once; otherwise the URL is just printed so you can start the viewer later with `bender server`.
 
-See [`ui/README.md`](ui/README.md) for the HTTP API, port configuration, and test commands.
+| Exit | Meaning |
+|---|---|
+| 0 | Success |
+| 60 | `server` (start): already running (stale pid file cleaned up; retry) |
+| 61 | `server stop` / `server status`: not running |
+| 62 | `server` (start): failed to spawn the detached child |
+
+The dev-time Bun server under `ui/` (`cd ui && bun run dev`) is kept for fast client iteration (hot rebundle on source edits). `bender server` serves the same UI but from an embedded bundle baked into the binary, so `go install github.com/mayckol/ai-bender/cmd/bender@latest` is all anyone needs to run the viewer.
+
+See [`ui/README.md`](ui/README.md) for the HTTP API and test commands.
 
 ## Documentation
 

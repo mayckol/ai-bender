@@ -45,9 +45,9 @@ $ARGUMENTS
    - After launching, print to the user exactly:
      - The new session ID (generated before launch).
      - The target report path (`.bender/artifacts/ghu/run-<timestamp>-report.md`).
-     - The viewer URL: `http://localhost:4317/sessions/<session-id>` — the bender-ui server (under `ui/` in the ai-bender repo, `bun run dev --project <cwd>`) streams events live if it is running.
+     - The viewer URL: `http://localhost:4317/sessions/<session-id>` — start the viewer with `bender server` (detached by default; `bender server stop` to stop).
      - A note that execution is running in the background and they will be notified on completion.
-   - **Best-effort auto-open.** If `bender-ui` is running (TCP probe of `127.0.0.1:4317` succeeds — use `nc -z localhost 4317` or equivalent), invoke the platform opener once and ignore failure: `open http://localhost:4317/sessions/<id>` on macOS, `xdg-open` on Linux, `powershell Start-Process` on Windows. If the probe fails, do not attempt to open — just print the URL so the user can start the viewer and click.
+   - **Best-effort auto-open.** If the viewer is running (TCP probe of `127.0.0.1:4317` succeeds — use `nc -z localhost 4317` or equivalent), invoke the platform opener once and ignore failure: `open http://localhost:4317/sessions/<id>` on macOS, `xdg-open` on Linux, `powershell Start-Process` on Windows. If the probe fails, do not attempt to open — just print the URL plus a hint like `Run 'bender server' to launch the viewer.`.
    - **Exit the main turn.** Do NOT execute the Workflow section in the main conversation when delegating.
 
 The main conversation's sole responsibility in `--bg` mode is to dispatch and report the launch. All orchestration, file writes, and agent invocations happen inside the forked subagent.
