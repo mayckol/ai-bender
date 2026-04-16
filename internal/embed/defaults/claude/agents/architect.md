@@ -6,7 +6,7 @@ write_scope:
   allow: ["artifacts/plan/**", "artifacts/specs/**"]
   deny:  ["**/*"]
 skills:
-  patterns: ["fg-architect-*", "bg-architect-*", "fg-plan-*"]
+  patterns: ["fg-architect-*", "bg-architect-*"]
 context: [fg, bg]
 invoked_by: [plan, ghu]
 ---

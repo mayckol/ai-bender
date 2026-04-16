@@ -18,6 +18,39 @@ cd ai-bender
 make build install
 ```
 
+## Prerequisites for `/bender-doctor`
+
+The `/bender-doctor` slash command (and any future slash command that delegates to the binary) needs **either** the `bender` binary on your `PATH` **or** the matching shell fallback script in the project at `.specify/scripts/bash/bender-doctor.sh` (or the PowerShell counterpart on Windows).
+
+If you see this message inside Claude Code:
+
+> The bender binary is not on PATH, and the fallback script path `.specify/scripts/bash/bender-doctor.sh` does not exist in this repo. Cannot validate the catalog — neither bender nor the fallback is available.
+
+…it means neither was found. Resolve it one of two ways:
+
+1. **Install the binary globally** (recommended):
+
+   ```bash
+   go install github.com/mayckol/ai-bender/cmd/bender@latest
+   # then verify
+   which bender   # → /Users/you/go/bin/bender (or similar)
+   bender doctor  # → status: healthy
+   ```
+
+   Make sure `$(go env GOPATH)/bin` is on your `PATH`.
+
+2. **Drop the fallback into the project** (if installing globally isn't an option):
+
+   ```bash
+   # from the ai-bender repo
+   mkdir -p <target-project>/.specify/scripts/bash
+   cp .specify/scripts/bash/bender-doctor.sh <target-project>/.specify/scripts/bash/
+   ```
+
+   The fallback is a thin Bash script that checks `.claude/` for parse errors. It does not replace the full catalog walk the binary performs — install the binary if you can.
+
+Note: `bender init` only materializes the `.claude/` workspace. The `.specify/scripts/` fallbacks live in *this* repo and are not embedded in the binary; we don't push them into target projects automatically because not every project wants the extra surface.
+
 ## Quickstart
 
 ```bash
