@@ -11,7 +11,10 @@ import (
 	"github.com/mayckol/ai-bender/internal/session"
 )
 
-const ExitSessionNotFound = 50
+const (
+	ExitSessionNotFound = 50
+	ExitSessionInvalid  = 51
+)
 
 func newSessionsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
@@ -21,6 +24,7 @@ func newSessionsCmd(g *globalFlags) *cobra.Command {
 	cmd.AddCommand(newSessionsListCmd(g))
 	cmd.AddCommand(newSessionsShowCmd(g))
 	cmd.AddCommand(newSessionsExportCmd(g))
+	cmd.AddCommand(newSessionsValidateCmd(g))
 	return cmd
 }
 
@@ -78,6 +82,40 @@ func newSessionsExportCmd(g *globalFlags) *cobra.Command {
 				os.Exit(ExitSessionNotFound)
 			}
 			return session.Export(dir, cmd.OutOrStdout())
+		},
+	}
+}
+
+func newSessionsValidateCmd(g *globalFlags) *cobra.Command {
+	return &cobra.Command{
+		Use:   "validate <session-id>",
+		Short: "Check state.json + events.jsonl against the v1 schema contract",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveProjectRoot(g)
+			if err != nil {
+				return err
+			}
+			dir, err := session.ResolveSessionDir(root, args[0])
+			if err != nil {
+				fmt.Fprintln(cmd.ErrOrStderr(), err)
+				os.Exit(ExitSessionNotFound)
+			}
+			violations, err := session.Validate(dir)
+			if err != nil {
+				return err
+			}
+			out := cmd.OutOrStdout()
+			if len(violations) == 0 {
+				fmt.Fprintf(out, "ok: %s is schema-compliant\n", args[0])
+				return nil
+			}
+			fmt.Fprintf(out, "%d violation(s) in session %s:\n", len(violations), args[0])
+			for _, v := range violations {
+				fmt.Fprintf(out, "  %s\n", v)
+			}
+			os.Exit(ExitSessionInvalid)
+			return nil
 		},
 	}
 }
