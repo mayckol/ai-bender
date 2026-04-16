@@ -75,6 +75,7 @@ bender list-projects
 bender sessions list
 bender sessions show <session-id>
 bender sessions export <session-id> > /tmp/session.json
+bender sessions validate <session-id>   # check state.json + events.jsonl against the v1 schema
 
 # 5. Validate the catalog any time
 bender doctor
@@ -225,6 +226,21 @@ bender sessions export 2026-04-16T14-03-22-a3f > /tmp/session.json
 | 0 | Success |
 | 50 | Session not found |
 
+#### `bender sessions validate <session-id> [--project=<name>]`
+
+Check a session's `state.json` and `events.jsonl` against the v1 schema contract. Reports every drift in one pass: missing top-level state fields (`schema_version`, `command`, `status`, `completed_at` when terminal), per-event envelope problems (unknown types, missing `actor`), per-event payload-field requirements (e.g., `session_started` must carry `invoker` and `working_dir`; `agent_completed` must carry `agent`, `task_ids`, `duration_ms`), session-id consistency across every line, and cross-file consistency (if `state.findings_count > 0`, the log must contain at least one `finding_reported` event).
+
+```bash
+bender sessions validate 2026-04-16T14-03-22-a3f
+# ok: 2026-04-16T14-03-22-a3f is schema-compliant
+```
+
+| Exit | Meaning |
+|---|---|
+| 0 | Compliant |
+| 50 | Session not found |
+| 51 | One or more schema violations |
+
 #### `bender update [--check]`
 
 Replace the current `bender` binary with the latest release. With `--check`, only print the available version without modifying anything.
@@ -273,13 +289,19 @@ Low-level design. From the latest approved capture, produces a coherent plan set
 
 Optional. Mirrors the source tree under `artifacts/plan/tests/` with prose-only test descriptions per source file. No executable test code is written. `/tdd confirm` approves the scaffold set.
 
-#### `/ghu [--from=<spec>] [--only=<task>] [--abort-on-failure]`
+#### `/ghu [--bg | --inline] [--from=<spec>] [--only=<task>] [--abort-on-failure]`
 
 Execute the approved plan. The only stage that writes code. Walks the default execution graph (scout → architect → optional surgeon → crafter ∥ tester → linter → reviewer ∥ sentinel ∥ benchmarker ∥ scribe → final report) and produces:
 - Source-tree mutations within each agent's declared write scope.
 - `artifacts/ghu/run-<ts>-report.md` final report.
 - `artifacts/ghu/{reviews,security,perf}/<ts>/` per-agent outputs.
 - `artifacts/.bender/sessions/<id>/{state.json,events.jsonl}` for `bender sessions` to inspect.
+
+**Execution mode**
+
+- `/ghu` (default) — runs in an **isolated subagent** via Claude Code's `Agent` tool with `run_in_background: true`. The main conversation stays clean: you see the session ID and the target report path immediately, and the heavy orchestration (file reads, agent invocations, tool output) happens in a forked context window. You'll be notified when the run completes; the full report is on disk at `.bender/artifacts/ghu/run-<ts>-report.md`.
+- `/ghu --bg` — same as default; explicit form.
+- `/ghu --inline` — opt out of the fork and run the workflow directly in the current conversation. Use this for debugging, short scoped runs (`--only=<task>`), or when you want to observe each step as it happens.
 
 Refuses to start if any required upstream artifact is missing. With `--abort-on-failure`, halts pending agents on first failure; default policy marks the failed agent as blocked and continues siblings.
 
