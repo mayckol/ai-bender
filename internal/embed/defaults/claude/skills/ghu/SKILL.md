@@ -1,5 +1,7 @@
 ---
 name: ghu
+user-invocable: true
+argument-hint: "[--from=<spec>] [--only=<task-id>] [--abort-on-failure]"
 context: fg
 description: "Execute the approved plan — implement, test, lint, review, and report. The only stage that writes code."
 provides: [stage, execute]

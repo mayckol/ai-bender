@@ -1,5 +1,6 @@
 ---
 name: bender-bootstrap
+user-invocable: true
 context: fg
 description: "Fill the AI-required sections of artifacts/constitution.md (purpose, conventions, glossary) by reading the codebase. Archives the prior constitution."
 provides: [stage, bootstrap, refine, constitution]

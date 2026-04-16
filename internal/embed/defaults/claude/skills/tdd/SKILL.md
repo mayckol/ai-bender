@@ -1,5 +1,7 @@
 ---
 name: tdd
+user-invocable: true
+argument-hint: "[scenario...] — optional seed scenarios to include in the test scaffolds"
 context: fg
 description: "Optional — mirror the source tree under artifacts/plan/tests/ with prose-only test descriptions per source file. No executable code."
 provides: [stage, tdd, scaffold]
