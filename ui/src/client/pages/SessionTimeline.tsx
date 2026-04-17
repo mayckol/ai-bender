@@ -3,7 +3,10 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 import { AgentFilter } from '../components/AgentFilter.tsx';
 import { EventRow } from '../components/EventRow.tsx';
 import { Layout } from '../components/Layout.tsx';
+import { PipelineFlow } from '../components/PipelineFlow.tsx';
 import { ProgressBar } from '../components/ProgressBar.tsx';
+import { SegmentedToggle } from '../components/SegmentedToggle.tsx';
+import { SubStageFlow } from '../components/SubStageFlow.tsx';
 import {
   fetchSession,
   reportUrl,
@@ -12,9 +15,16 @@ import {
   type SessionState,
 } from '../lib/api.ts';
 import { distinctAgents, responsibleAgent } from '../lib/agents.ts';
+import {
+  extractSkillSteps,
+  isConfirmRun,
+  stageForCommand,
+} from '../lib/pipeline.ts';
 import { subscribeSSE } from '../lib/sse.ts';
 
 interface Props { params: { id: string }; }
+
+type TimelineView = 'logs' | 'flow';
 
 export function SessionTimeline({ params }: Props) {
   const id = params.id;
@@ -23,6 +33,7 @@ export function SessionTimeline({ params }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [agentFilter, setAgentFilter] = useState<Set<string> | null>(null);
+  const [view, setView] = useState<TimelineView>('flow');
 
   const frozen =
     state?.status === 'completed' ||
@@ -44,13 +55,20 @@ export function SessionTimeline({ params }: Props) {
     return events.filter((ev) => agentFilter.has(responsibleAgent(ev)));
   }, [events, agentFilter]);
 
+  const currentStage = useMemo(() => stageForCommand(state?.command), [state?.command]);
+  const confirmRun = useMemo(() => isConfirmRun(state?.command), [state?.command]);
+  const skillSteps = useMemo(
+    () => extractSkillSteps(events, currentStage),
+    [events, currentStage],
+  );
+
   function toggleAgent(a: string) {
     setAgentFilter((prev) => {
       const next = new Set(prev ?? agents);
       if (next.has(a)) next.delete(a);
       else next.add(a);
-      if (next.size === agents.length) return null; // all selected → no filter
-      if (next.size === 0) return null;             // none selected → show all
+      if (next.size === agents.length) return null;
+      if (next.size === 0) return null;
       return next;
     });
   }
@@ -106,9 +124,6 @@ export function SessionTimeline({ params }: Props) {
         .catch((err) => {
           if (!mounted) return;
           const msg = String(err);
-          // Treat "session not found" as a pending session (race between
-          // Chrome opening and the dispatcher seeding the directory) and
-          // retry every 500ms for up to ~30s before surfacing it.
           if (/not\s*found|404/i.test(msg)) {
             setPending(true);
             retryTimer = setTimeout(load, 500);
@@ -145,10 +160,10 @@ export function SessionTimeline({ params }: Props) {
         </span>
       }
     >
-      <div style={{ marginBottom: 16 }}>
+      <div class="toolbar-row">
         <a class="btn" href="/">← all stages</a>
         {reportAvailable && (
-          <a class="btn" href={reportUrl(id)} target="_blank" rel="noopener" style={{ marginLeft: 8 }}>
+          <a class="btn" href={reportUrl(id)} target="_blank" rel="noopener">
             Open report ↗
           </a>
         )}
@@ -163,19 +178,40 @@ export function SessionTimeline({ params }: Props) {
           <h2>Stage starting…</h2>
           <p class="muted-small">
             Waiting for <code>{id}</code> to appear under <code>.bender/sessions/</code>.
-            This page will switch to the live timeline the moment the first event lands.
+            This page will switch to the live telemetry the moment the first event lands.
           </p>
         </div>
       )}
 
-      <div class="card">
-        <h2>Progress</h2>
-        <ProgressBar events={events} frozen={!!frozen} />
-      </div>
+      <section class="card card-telemetry">
+        <header class="card-frame-head">
+          <span class="card-frame-kicker">001</span>
+          <h2>Telemetry</h2>
+          <span class="card-frame-rule" />
+        </header>
+        <ProgressBar events={events} frozen={!!frozen} status={state?.status} />
+      </section>
+
+      <section class="card card-pipeline">
+        <header class="card-frame-head">
+          <span class="card-frame-kicker">002</span>
+          <h2>Pipeline</h2>
+          <span class="card-frame-rule" />
+        </header>
+        <PipelineFlow
+          currentStage={currentStage}
+          sessionStatus={state?.status}
+          isConfirm={confirmRun}
+        />
+      </section>
 
       {state && (
-        <div class="card">
-          <h2>Stage</h2>
+        <section class="card">
+          <header class="card-frame-head">
+            <span class="card-frame-kicker">003</span>
+            <h2>Stage manifest</h2>
+            <span class="card-frame-rule" />
+          </header>
           <dl class="meta-grid">
             <dt>Command</dt><dd>{state.command}</dd>
             <dt>Status</dt>
@@ -194,31 +230,59 @@ export function SessionTimeline({ params }: Props) {
             )}
             <dt>Files changed</dt><dd>{state.files_changed ?? 0}</dd>
           </dl>
-        </div>
+        </section>
       )}
 
-      <div class="card">
-        <h2>
-          Timeline ({visibleEvents.length}
-          {visibleEvents.length !== events.length && <> of {events.length}</>} events)
-        </h2>
-        <AgentFilter
-          agents={agents}
-          active={agentFilter}
-          counts={agentCounts}
-          onToggle={toggleAgent}
-          onClear={() => setAgentFilter(null)}
-        />
-        <div class="event-log">
-          {visibleEvents.length === 0 ? (
-            <div class="empty">
-              {events.length === 0 ? 'Waiting for events…' : 'No events match the current filter.'}
+      <section class="card card-timeline">
+        <header class="card-frame-head">
+          <span class="card-frame-kicker">004</span>
+          <h2>
+            {view === 'flow' ? 'Stage flow' : 'Stage logs'}
+            <span class="card-frame-count">
+              {view === 'flow'
+                ? ` · ${skillSteps.length} step${skillSteps.length === 1 ? '' : 's'}`
+                : ` · ${visibleEvents.length}${visibleEvents.length !== events.length ? ` of ${events.length}` : ''} event${events.length === 1 ? '' : 's'}`}
+            </span>
+          </h2>
+          <span class="card-frame-rule" />
+          <SegmentedToggle
+            ariaLabel="Timeline view"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'flow', label: 'Flow', glyph: '◈' },
+              { value: 'logs', label: 'Logs', glyph: '≡' },
+            ]}
+          />
+        </header>
+
+        {view === 'logs' ? (
+          <>
+            <AgentFilter
+              agents={agents}
+              active={agentFilter}
+              counts={agentCounts}
+              onToggle={toggleAgent}
+              onClear={() => setAgentFilter(null)}
+            />
+            <div class="event-log">
+              {visibleEvents.length === 0 ? (
+                <div class="empty">
+                  {events.length === 0 ? 'Waiting for events…' : 'No events match the current filter.'}
+                </div>
+              ) : (
+                visibleEvents.map((ev, i) => <EventRow key={i} event={ev} />)
+              )}
             </div>
-          ) : (
-            visibleEvents.map((ev, i) => <EventRow key={i} event={ev} />)
-          )}
-        </div>
-      </div>
+          </>
+        ) : (
+          <SubStageFlow
+            stage={currentStage}
+            steps={skillSteps}
+            sessionStatus={state?.status}
+          />
+        )}
+      </section>
     </Layout>
   );
 }
