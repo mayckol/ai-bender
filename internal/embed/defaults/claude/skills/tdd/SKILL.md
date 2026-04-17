@@ -112,8 +112,11 @@ Same envelope as `/cry` and `/plan`. Stage is **`tdd`** for every event.
 ### stage_completed / session_completed
 ```json
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"tdd"},"type":"stage_completed","payload":{"stage":"tdd","inputs":[".bender/artifacts/plan/tasks-<ts>.md"],"outputs":["<scaffold paths...>"]}}
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"completed","duration_ms":<int>,"agents_summary":[]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"awaiting_confirm","duration_ms":<int>,"agents_summary":[]}}
 ```
+
+A draft `/tdd` run emits `status: "awaiting_confirm"`; only `/tdd confirm`
+emits `status: "completed"`.
 
 ### state.json (overwrite in place)
 ```json
@@ -123,13 +126,16 @@ Same envelope as `/cry` and `/plan`. Stage is **`tdd`** for every event.
   "command": "/tdd",
   "started_at": "<iso>",
   "completed_at": "<iso, once terminal>",
-  "status": "running|completed|failed",
+  "status": "running|awaiting_confirm|completed|failed",
   "source_artifacts": [".bender/artifacts/plan/tasks-<ts>.md"],
   "skills_invoked": ["scaffold_enumerate","scaffold_<slug>", "..."],
   "files_changed": <int>,
   "findings_count": 0
 }
 ```
+
+A draft `/tdd` run finalises with `status: awaiting_confirm`. The subsequent
+`/tdd confirm` session finalises with `status: completed`.
 
 ### Forbidden shortcuts
 - `ts` / `event` / inlined payload fields / missing `schema_version|session_id|actor|payload` — all WRONG.
@@ -141,7 +147,10 @@ Same envelope as `/cry` and `/plan`. Stage is **`tdd`** for every event.
 2. `stage_started` (stage = `tdd`)
 3. one `artifact_written` per flipped scaffold (new sha256)
 4. `stage_completed`
-5. `session_completed`
+5. `session_completed` with `payload.status: "completed"`
+
+The `/tdd confirm` session finalises state.json with `status: "completed"`.
+The original `/tdd` draft session stays as `awaiting_confirm`.
 
 ## Notes
 

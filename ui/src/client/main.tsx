@@ -10,7 +10,7 @@ function NotFound() {
       <div class="card">
         <h2>Not found</h2>
         <p>
-          This page does not exist. <a href="/">Return to the session list</a>.
+          This page does not exist. <a href="/">Return to the stages list</a>.
         </p>
       </div>
     </div>

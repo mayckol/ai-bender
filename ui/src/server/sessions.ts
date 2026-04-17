@@ -41,7 +41,10 @@ export async function listSessions(projectRoot: string): Promise<SessionSummary[
       // Skip malformed session dirs; they surface via `bender sessions validate`.
     }
   }
-  out.sort((a, b) => a.id.localeCompare(b.id));
+  // Newest first: session IDs are timestamp-prefixed, so a reverse lexical
+  // sort puts the most recent run at the top — matching the UI's left-to-right
+  // reading order and the user's "what did I just run?" question.
+  out.sort((a, b) => b.id.localeCompare(a.id));
   return out;
 }
 

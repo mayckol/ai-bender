@@ -24,7 +24,10 @@ export function SessionTimeline({ params }: Props) {
   const [connected, setConnected] = useState(false);
   const [agentFilter, setAgentFilter] = useState<Set<string> | null>(null);
 
-  const frozen = state?.status === 'completed' || state?.status === 'failed';
+  const frozen =
+    state?.status === 'completed' ||
+    state?.status === 'failed' ||
+    state?.status === 'awaiting_confirm';
   const liveClass = frozen ? 'frozen' : connected ? 'connected' : '';
 
   const agents = useMemo(() => distinctAgents(events), [events]);
@@ -143,7 +146,7 @@ export function SessionTimeline({ params }: Props) {
       }
     >
       <div style={{ marginBottom: 16 }}>
-        <a class="btn" href="/">← all sessions</a>
+        <a class="btn" href="/">← all stages</a>
         {reportAvailable && (
           <a class="btn" href={reportUrl(id)} target="_blank" rel="noopener" style={{ marginLeft: 8 }}>
             Open report ↗
@@ -157,7 +160,7 @@ export function SessionTimeline({ params }: Props) {
 
       {pending && !state && !error && (
         <div class="card">
-          <h2>Session starting…</h2>
+          <h2>Stage starting…</h2>
           <p class="muted-small">
             Waiting for <code>{id}</code> to appear under <code>.bender/sessions/</code>.
             This page will switch to the live timeline the moment the first event lands.
@@ -172,10 +175,15 @@ export function SessionTimeline({ params }: Props) {
 
       {state && (
         <div class="card">
-          <h2>Session</h2>
+          <h2>Stage</h2>
           <dl class="meta-grid">
             <dt>Command</dt><dd>{state.command}</dd>
-            <dt>Status</dt><dd><span class={`status-pill ${state.status}`}>{state.status}</span></dd>
+            <dt>Status</dt>
+            <dd>
+              <span class={`status-pill ${state.status}`}>
+                {state.status === 'awaiting_confirm' ? 'awaiting confirm' : state.status}
+              </span>
+            </dd>
             <dt>Started</dt><dd>{state.started_at}</dd>
             {state.completed_at && <><dt>Completed</dt><dd>{state.completed_at}</dd></>}
             {state.source_artifacts && state.source_artifacts.length > 0 && (

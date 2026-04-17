@@ -99,6 +99,7 @@ code, pre { font-family: var(--font-mono); }
   letter-spacing: 0.05em;
 }
 .status-pill.running { background: rgba(122, 162, 247, 0.18); color: var(--accent); }
+.status-pill.awaiting_confirm { background: rgba(224, 175, 104, 0.18); color: #e0af68; }
 .status-pill.completed { background: rgba(158, 206, 106, 0.18); color: var(--ok); }
 .status-pill.failed { background: rgba(247, 118, 142, 0.18); color: var(--err); }
 
