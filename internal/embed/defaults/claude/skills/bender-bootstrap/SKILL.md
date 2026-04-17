@@ -19,6 +19,16 @@ outputs:
 
 This skill reads the codebase, fills those three sections, archives the prior constitution under `.bender/artifacts/constitution/<timestamp>.md`, and writes the new one.
 
+## Event emission discipline — STREAM, never batch
+
+**Every** event MUST be appended to `.bender/sessions/<id>/events.jsonl` the moment its trigger happens — **one Bash tool call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into a single notification and the user sees `Waiting for events…` for the full run.
+
+```bash
+printf '%s\n' '<single-line JSON>' >> .bender/sessions/<id>/events.jsonl
+```
+
+Intent events (`skill_invoked`) append BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `stage_completed`, `session_completed`) append AFTER.
+
 ## Pre-Execution Checks
 
 Run any `hooks.before_bootstrap` from `.specify/extensions.yml`.

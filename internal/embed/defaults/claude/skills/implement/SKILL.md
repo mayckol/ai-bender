@@ -24,6 +24,16 @@ Same execution machinery as `/ghu`, but only the named task is dispatched.
 $ARGUMENTS
 ```
 
+## Event emission discipline — STREAM, never batch
+
+**Every** event in "Observability shape" MUST be appended to `.bender/sessions/<id>/events.jsonl` the moment its trigger happens — **one Bash tool call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into one notification and the user sees `Waiting for events…` for the full run.
+
+```bash
+printf '%s\n' '<single-line JSON>' >> .bender/sessions/<id>/events.jsonl
+```
+
+Intent events (`skill_invoked`, `orchestrator_decision`, `agent_started`) append BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `agent_completed`, `stage_completed`, `session_completed`) append AFTER. Progress events (`orchestrator_progress`, `agent_progress`) append as their percent changes. Never buffer events and flush them with one `Write`.
+
 ## Workflow
 
 1. **Required argument**: a task id (e.g., `T012`) or a unique substring of a task title.

@@ -50,34 +50,74 @@ Use that artifact as the source.
    - `error: no approved capture artifact found. Run \`/cry "<your request>"\` and \`/cry confirm\` first.`
    - Exit. Do **not** create empty artifacts.
 
+## Event emission discipline — STREAM, never batch
+
+**Every** event listed in the "Observability shape" section below MUST be
+appended to `.bender/sessions/<id>/events.jsonl` **the moment its trigger
+happens** — one tool call per event, not one big `Write` at the end. The
+bender-ui viewer tails the file via fsnotify; batching every event into a
+single end-of-run write collapses the whole timeline into one notification
+and the user sees `Waiting for events…` for the full duration of the run.
+
+How to append a single event (use Bash, one call per event):
+
+```bash
+printf '%s\n' '<single-line JSON>' >> .bender/sessions/<id>/events.jsonl
+```
+
+Ordering rule:
+
+- Emit BEFORE the action for intent events (`skill_invoked`,
+  `orchestrator_decision`, `agent_started`).
+- Emit AFTER the action for result events (`file_changed`,
+  `artifact_written`, `skill_completed`, `stage_completed`,
+  `session_completed`).
+- Do NOT buffer events in memory and dump them via one `Write` — that
+  is the bug this rule exists to prevent.
+
 ## Plan Set Production
 
 1. **Generate one shared timestamp** for the entire plan set.
 
-2. **Create the session directory** and emit `session_started` + `stage_started`.
+2. **Create the session directory** `.bender/sessions/<id>/` and write
+   `state.json` (status: running).
+   Append `session_started` to events.jsonl. Append `stage_started` to
+   events.jsonl.
 
-3. **Author the spec** at `.bender/artifacts/specs/<slug>-<timestamp>.md`:
-   - Frontmatter: `from_capture, status: draft, created_at, tool_version`.
-   - Body: User Scenarios & Testing, Requirements (functional + key entities), Success Criteria, Assumptions.
+3. **Spec draft**:
+   - Append `skill_invoked` for `spec_draft` BEFORE writing the spec.
+   - Write `.bender/artifacts/specs/<slug>-<timestamp>.md` (frontmatter:
+     `from_capture, status: draft, created_at, tool_version`; body: User
+     Scenarios & Testing, Requirements, Success Criteria, Assumptions).
+   - Append `artifact_written` for the spec immediately after.
+   - Append `skill_completed` for `spec_draft` immediately after.
 
-4. **Author the data model** at `.bender/artifacts/plan/data-model-<timestamp>.md`:
-   - Entities, fields, validation rules, relationships, state transitions.
+4. **Data model**:
+   - Append `skill_invoked` for `data_model`.
+   - Write `.bender/artifacts/plan/data-model-<timestamp>.md` (entities,
+     fields, validation, relationships, state transitions).
+   - Append `artifact_written`, then `skill_completed`.
 
-5. **Author the API contract** at `.bender/artifacts/plan/api-contract-<timestamp>.md` *(only if the plan involves an externally consumable interface)*:
-   - Endpoints / CLI grammar / GraphQL types / etc., as appropriate.
+5. **API contract** (only if the plan has an externally consumable interface):
+   - Append `skill_invoked` for `api_contract`.
+   - Write `.bender/artifacts/plan/api-contract-<timestamp>.md`.
+   - Append `artifact_written`, then `skill_completed`.
 
-6. **Author the risk assessment** at `.bender/artifacts/plan/risk-assessment-<timestamp>.md`:
-   - Risks (severity × likelihood), mitigations, open risks.
+6. **Risk assessment**:
+   - Append `skill_invoked` for `risk_assessment`.
+   - Write `.bender/artifacts/plan/risk-assessment-<timestamp>.md` (risks
+     with severity × likelihood, mitigations, open risks).
+   - Append `artifact_written`, then `skill_completed`.
 
-7. **Author the task list** at `.bender/artifacts/plan/tasks-<timestamp>.md`:
-   - One section per task: id (T001+), title, description, agent_hints, depends_on, affected_files, acceptance.
+7. **Task list**:
+   - Append `skill_invoked` for `tasks_decompose`.
+   - Write `.bender/artifacts/plan/tasks-<timestamp>.md` (T001+, title,
+     description, agent_hints, depends_on, affected_files, acceptance).
    - Reject cyclic dependencies before writing.
+   - Append `artifact_written`, then `skill_completed`.
 
-8. **Emit events** for each artifact written — use the exact shapes in "Observability shape" below.
-   Order: `session_started` → `stage_started` → one `skill_invoked` + matching `skill_completed` per
-   sub-step (`spec_draft`, `data_model`, `api_contract` if applicable, `risk_assessment`,
-   `tasks_decompose`) → one `artifact_written` per artifact produced (5 total, or 4 if no API
-   contract) → `stage_completed` → `session_completed`.
+8. **Finalize**: rewrite `state.json` with `status: completed` and
+   `completed_at`. Append `stage_completed`. Append `session_completed`.
 
 9. **Print** every artifact path produced and "next: `/plan confirm`".
 
