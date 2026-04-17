@@ -80,7 +80,9 @@ func copyDir(src, dst string) error {
 
 func runBender(tb testing.TB, bin, dir string, args ...string) (string, error) {
 	tb.Helper()
-	return runBenderEnv(tb, bin, dir, nil, args...)
+	// Isolate the workspace registry so a `default_project` in the developer's
+	// real `~/.bender/workspace.yaml` can't leak into cwd-scoped tests.
+	return runBenderEnv(tb, bin, dir, []string{"XDG_CONFIG_HOME=" + tb.TempDir()}, args...)
 }
 
 func runBenderEnv(tb testing.TB, bin, dir string, extraEnv []string, args ...string) (string, error) {
@@ -110,8 +112,10 @@ func TestInit_OnEmptyProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
-	mustExist(t, root, ".claude/groups.yaml")
+	mustExist(t, root, ".bender/groups.yaml")
+	mustExist(t, root, ".bender/pipeline.yaml")
 	mustExist(t, root, ".bender/artifacts/constitution.md")
+	mustNotExist(t, root, ".claude/groups.yaml")
 
 	body := mustRead(t, filepath.Join(root, ".bender/artifacts", "constitution.md"))
 	if !strings.Contains(body, "_pending: true") {
@@ -163,7 +167,7 @@ func TestInit_PreservesUserFiles(t *testing.T) {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
 	// User edits one of the materialised files.
-	custom := filepath.Join(root, ".claude", "groups.yaml")
+	custom := filepath.Join(root, ".bender", "groups.yaml")
 	if err := os.WriteFile(custom, []byte("groups: { custom: { description: mine, select: { explicit: [foo] } } }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -191,6 +195,13 @@ func mustExist(tb testing.TB, root, rel string) {
 	tb.Helper()
 	if _, err := os.Stat(filepath.Join(root, rel)); err != nil {
 		tb.Fatalf("expected %s to exist: %v", rel, err)
+	}
+}
+
+func mustNotExist(tb testing.TB, root, rel string) {
+	tb.Helper()
+	if _, err := os.Stat(filepath.Join(root, rel)); err == nil {
+		tb.Fatalf("expected %s to NOT exist", rel)
 	}
 }
 

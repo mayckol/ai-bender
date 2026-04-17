@@ -14,7 +14,7 @@ func TestSyncDefaults_PreservesUserFiles(t *testing.T) {
 	if out, err := runBender(t, bin, root, "init"); err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
-	custom := filepath.Join(root, ".claude", "groups.yaml")
+	custom := filepath.Join(root, ".bender", "groups.yaml")
 	if err := os.WriteFile(custom, []byte("groups: { custom: { description: mine, select: { explicit: [foo] } } }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestSyncDefaults_ForceOverwrites(t *testing.T) {
 	if out, err := runBender(t, bin, root, "init"); err != nil {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
-	custom := filepath.Join(root, ".claude", "groups.yaml")
+	custom := filepath.Join(root, ".bender", "groups.yaml")
 	if err := os.WriteFile(custom, []byte("groups: { custom: { description: mine, select: { explicit: [foo] } } }\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

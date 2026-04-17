@@ -88,7 +88,7 @@ func TestAllAgents_Parse(t *testing.T) {
 
 // TestDefaultGroups_Parse: ensure groups.yaml is valid and contains the canonical entries.
 func TestDefaultGroups_Parse(t *testing.T) {
-	groups, err := group.LoadFromFS(embedded.FS(), "claude/groups.yaml")
+	groups, err := group.LoadFromFS(embedded.FS(), "bender/groups.yaml")
 	if err != nil {
 		t.Fatalf("LoadFromFS: %v", err)
 	}

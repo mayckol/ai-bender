@@ -59,8 +59,10 @@ func Parse(data []byte) (map[string]*Group, error) {
 	return out, nil
 }
 
-// LoadFromFS reads `claude/groups.yaml` from the given filesystem and parses it.
-// A missing file yields an empty map and no error so the caller can layer defaults and user files.
+// LoadFromFS reads `groups.yaml` at the given `base` path inside `root` and parses it.
+// Callers pass `"bender/groups.yaml"` for the embedded FS and `"groups.yaml"` for a
+// user FS rooted at `<project>/.bender/`. A missing file yields an empty map and no
+// error so the caller can layer defaults and user files.
 func LoadFromFS(root fs.FS, base string) (map[string]*Group, error) {
 	data, err := fs.ReadFile(root, base)
 	if err != nil {

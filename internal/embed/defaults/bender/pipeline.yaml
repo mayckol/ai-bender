@@ -1,0 +1,124 @@
+# Declarative execution graph for /ghu and /implement.
+# The orchestrator walks this DAG; parallelism is emergent — two nodes whose
+# dependencies are all resolved dispatch in the same assistant message.
+# `priority` only breaks ties when more nodes are ready than `max_concurrent`
+# allows. See `internal/pipeline/pipeline.go` for the authoritative spec.
+
+schema_version: 1
+
+pipeline:
+  id: ghu-default
+  description: "Default execution graph: scout → architect → (surgeon if refactor) → {TDD cycle | plain cycle} → linter → review trio → scribe → report."
+  max_concurrent: 8
+  halt_on_failure: false
+
+variables:
+  tdd_mode:
+    kind: glob_nonempty_with_status
+    pattern: .bender/artifacts/plan/tests/**/*.md
+    require_status: approved
+  plan_refactor:
+    kind: plan_flag
+    flag: requires_refactor
+
+nodes:
+  # --- Orientation ---
+  - id: scout
+    agent: scout
+    skill: bg-scout-explore
+    depends_on: []
+    priority: 100
+    required: true
+
+  - id: architect
+    agent: architect
+    skill: bg-architect-validate
+    depends_on: [scout]
+    priority: 100
+    required: true
+
+  - id: surgeon
+    agent: surgeon
+    skill: bg-surgeon-refactor
+    depends_on: [architect]
+    priority: 90
+    when: plan_refactor == true
+
+  # --- TDD branch (3 sequential gates) ---
+  - id: tdd-scaffold
+    agent: tester
+    skill: bg-tester-scaffold
+    depends_on: [architect, surgeon]
+    priority: 80
+    when: tdd_mode == true
+    halt_on_failure: true
+
+  - id: tdd-implement
+    agent: crafter
+    skill: bg-crafter-implement
+    depends_on: [tdd-scaffold]
+    priority: 80
+    when: tdd_mode == true
+    halt_on_failure: true
+
+  - id: tdd-verify
+    agent: tester
+    skill: bg-tester-run
+    depends_on: [tdd-implement]
+    priority: 80
+    when: tdd_mode == true
+    halt_on_failure: true
+
+  # --- Plain branch (2 concurrent, share deps — emergent parallelism) ---
+  - id: plain-impl
+    agent: crafter
+    skill: bg-crafter-implement
+    depends_on: [architect, surgeon]
+    priority: 80
+    when: tdd_mode == false
+
+  - id: plain-tests
+    agent: tester
+    skill: bg-tester-write-and-run
+    depends_on: [architect, surgeon]
+    priority: 80
+    when: tdd_mode == false
+
+  # --- Linter sits at the merge point of both branches ---
+  - id: linter
+    agent: linter
+    skill: bg-linter-run-and-fix
+    depends_on: [tdd-verify, plain-impl, plain-tests]
+    depends_mode: any-resolved
+    priority: 70
+
+  # --- Read-only review trio (3 concurrent, share deps) ---
+  - id: reviewer
+    agent: reviewer
+    skill: bg-reviewer-critique
+    depends_on: [linter]
+    priority: 60
+
+  - id: sentinel
+    agent: sentinel
+    skill: bg-sentinel-static-scan
+    depends_on: [linter]
+    priority: 60
+
+  - id: benchmarker
+    agent: benchmarker
+    skill: bg-benchmarker-analyze
+    depends_on: [linter]
+    priority: 60
+
+  # --- Docs pass runs alone after the review trio ---
+  - id: scribe
+    agent: scribe
+    skill: bg-scribe-update-docs
+    depends_on: [reviewer, sentinel, benchmarker]
+    priority: 50
+
+  - id: report
+    type: orchestrator
+    depends_on: [scribe]
+    priority: 10

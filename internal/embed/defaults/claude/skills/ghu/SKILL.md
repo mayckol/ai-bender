@@ -79,14 +79,15 @@ Forbidden combinations:
 
 ## Parallel dispatch protocol — MUST OBEY
 
-Groups in `.claude/groups.yaml` declared with `ordered: false` (currently
-`plain-cycle`, `review-sweep`, `pre-implementation-checks`) MUST be
-dispatched as a **single concurrent batch**, never one-per-turn. Claude's
-`Agent` tool runs invocations in parallel only when multiple tool-use
-blocks appear in the SAME assistant message. Dispatching one agent, waiting
-for it, then dispatching the next silently serialises the whole group —
-which defeats its purpose and is the single biggest correctness-and-speed
-bug this section exists to prevent.
+The pipeline walk produces batches of two or more ready nodes whenever
+their dependencies leave them free to run concurrently (emergent
+parallelism; see `.bender/pipeline.yaml`). Every such batch MUST be
+dispatched as a **single concurrent message**, never one-per-turn.
+Claude's `Agent` tool runs invocations in parallel only when multiple
+tool-use blocks appear in the SAME assistant message. Dispatching one
+agent, waiting for it, then dispatching the next silently serialises the
+whole batch — which defeats the pipeline's purpose and is the single
+biggest correctness-and-speed bug this section exists to prevent.
 
 ### Rule for `ordered: false` groups
 
@@ -150,29 +151,33 @@ Run any `hooks.before_ghu`.
      - `error: missing required upstream artifact: <name>. Run /plan and /plan confirm first.`
      - Exit. Do **not** create a partial session.
 
-2. **Detect TDD mode.** Glob `.bender/artifacts/plan/tests/**/*.md`. If the glob is non-empty AND every matched file's frontmatter has `status: approved`, set **`tdd_mode = true`** for the remainder of this run. Record the decision with an `orchestrator_decision` event (`decision_type: "execution_mode"`, payload `mode: "tdd"` or `mode: "plain"`, plus `scaffold_count`). Skip this step if there are no scaffolds (proceed in plain mode).
+2. **Load `.bender/pipeline.yaml`** — the declarative execution DAG. Reject
+   any pipeline whose `schema_version` you don't recognise. The full schema
+   and runtime semantics are defined in `specs/002-pipeline-config-move/contracts/pipeline-schema.md`
+   — this SKILL intentionally doesn't duplicate that schema; just load, evaluate variables, and walk.
 
 3. **Honor `--only=<task>`** to scope to a single task (same as `/implement`).
 
-4. **Honor `--skip=<name>[,<name>...]`** to bypass agents or groups. Accepts the following names (aliases in parentheses):
+4. **Honor `--skip=<name>[,<name>...]`** to bypass pipeline nodes by agent name.
+   Any node whose `agent` matches a skipped canonical name is treated as
+   `when: false` (resolved-by-skip) for the rest of the walk. Canonical
+   names (aliases in parentheses):
 
    | Name | Alias(es) | What it skips |
    |---|---|---|
-   | `linter` | `lint` | the linter agent + `bg-linter-*` skills |
-   | `tester` | `test`, `tests` | the tester agent (all of `bg-tester-*` and `fg-tester-*`) |
-   | `reviewer` | `review` | the reviewer agent's critique + PR summary |
-   | `sentinel` | `security`, `sec` | the sentinel agent's security pass |
-   | `benchmarker` | `perf`, `bench` | the benchmarker agent's perf pass |
-   | `scribe` | `docs` | the scribe agent's doc + inline-comment updates (also skips the `docs-sweep` group) |
-   | `surgeon` | `refactor` | the surgeon agent's refactor pass |
-   | `architect` | — | the architect validation pass during /ghu |
-   | `review-sweep` | `reviews` | the `review-sweep` group (reviewer, sentinel, benchmarker — the read-only trio) |
-   | `docs-sweep` | `docs-pass` | the `docs-sweep` group (scribe only) |
+   | `linter` | `lint` | every pipeline node whose `agent` is `linter` |
+   | `tester` | `test`, `tests` | every node whose `agent` is `tester` |
+   | `reviewer` | `review` | every node whose `agent` is `reviewer` |
+   | `sentinel` | `security`, `sec` | every node whose `agent` is `sentinel` |
+   | `benchmarker` | `perf`, `bench` | every node whose `agent` is `benchmarker` |
+   | `scribe` | `docs` | every node whose `agent` is `scribe` |
+   | `surgeon` | `refactor` | every node whose `agent` is `surgeon` |
+   | `architect` | — | every node whose `agent` is `architect` |
 
    Rules:
    - **`crafter` is not skippable.** `/ghu` that skips crafter produces nothing. Reject with `error: cannot skip crafter — /ghu has nothing to do without it.`
    - **`scout` is not skippable.** Its cache is what makes downstream agents token-efficient; skipping it forces every other agent to re-read the tree.
-   - **In TDD mode**, `tester` skipping is rejected: the `tdd-cycle` group needs `bg-tester-scaffold` and `bg-tester-run`, so dropping the tester agent breaks the cycle. Print `error: --skip=tester is not compatible with TDD mode (approved scaffolds under .bender/artifacts/plan/tests/). Remove the scaffolds or drop --skip.`.
+   - **In TDD mode** (`tdd_mode == true`), `tester` skipping is rejected — the TDD branch (`tdd-scaffold → tdd-implement → tdd-verify`) needs the tester. Print `error: --skip=tester is not compatible with TDD mode (approved scaffolds under .bender/artifacts/plan/tests/). Remove the scaffolds or drop --skip.`.
    - **Unknown names** are a hard error listing the valid names above.
    - Every resolved skip entry MUST emit an `orchestrator_decision` event with `decision_type: "skip"` and payload `{"target": "<canonical-name>", "reason": "user_requested", "alias": "<what the user typed>"}` so the viewer and `bender sessions validate` can show what was bypassed.
 
@@ -183,89 +188,106 @@ Run any `hooks.before_ghu`.
    - **`--inline` mode**: create `.bender/sessions/<id>/` yourself, write `state.json`, and append `session_started` + `stage_started` before continuing.
    - In **both** modes, append `orchestrator_decision` next (with `decision_type: "task_decomposition"`). The decomposition payload MUST carry the task list AND the dependency edges extracted from the tasks file: `{"decision_type":"task_decomposition","tasks":["T001","T002",...],"dependencies":[{"task":"T002","depends_on":["T001"]},...]}`. Tasks with no incoming edges are the first wave; everything else must wait for its prerequisites.
 
-7. **Walk the execution graph**, which depends on `tdd_mode`:
+7. **Evaluate the pipeline's declared variables** in the order they appear
+   under `variables:` in `.bender/pipeline.yaml`. Kinds:
 
-   **Plain mode** (no approved scaffolds) — walks the `plain-cycle` + `review-sweep` + `docs-sweep` groups from `.claude/groups.yaml`. Follow the **Parallel dispatch protocol** above for every `ordered: false` group (one `orchestrator_decision` with `decision_type: "parallel_dispatch"`, then ALL agents in a single assistant message):
-   ```
-   scout (map codebase) → architect (validate approach)
-   ↓
-   surgeon (if refactor needed)
-   ↓
-   plain-cycle group (ordered: false — PARALLEL DISPATCH):
-     crafter → bg-crafter-implement   ∥   tester → bg-tester-write-and-run
-   ↓
-   linter (autofix + report)
-   ↓
-   review-sweep group (ordered: false — PARALLEL DISPATCH, read-only trio):
-     reviewer ∥ sentinel ∥ benchmarker
-   ↓
-   docs-sweep group (ordered: true — SERIAL, after the review trio):
-     scribe (inline comments + docs; kept serial so source-edits don't
-     race the review trio's file reads)
-   ↓
-   final report
+   - **`glob_nonempty_with_status`**: execute the glob under the project
+     root. If it matches no files → variable is `false`. If any matched
+     file's YAML frontmatter lacks a `status` key whose value equals the
+     declared `require_status`, the variable is `false`. Otherwise `true`.
+   - **`plan_flag`**: open the latest approved plan under
+     `.bender/artifacts/plan/plan-*.md` (or the plan artifact referenced by
+     the pipeline's `source_artifacts`). Read the frontmatter key named by
+     `flag`. Coerce to `true`/`false`. A missing key or missing plan file
+     resolves to `false` (conservative).
+   - **`literal`**: use the declared `value` verbatim.
+
+   Once every variable has a concrete value, emit:
+
+   ```json
+   {"type":"orchestrator_decision","payload":{"decision_type":"pipeline_loaded","pipeline_id":"<pipeline.id>","nodes_total":<int>,"nodes_skipped_by_when":<int>,"max_concurrent":<int>,"variables":{"<name>":<value>, ...}}}
    ```
 
-   **TDD mode** (approved scaffolds present) — walks the `tdd-cycle` group from `.claude/groups.yaml`:
+   For backwards-compatible viewers, also emit an `execution_mode` event
+   derived from `tdd_mode` (`mode: "tdd"` or `mode: "plain"` plus
+   `scaffold_count`).
+
+8. **Walk the pipeline DAG.** Follow this algorithm verbatim — it mirrors
+   `internal/pipeline/walker.go::DryRun` byte-for-byte so the viewer's
+   flow diagram and the Go `bender doctor` dry-run both stay in sync with
+   your walk.
+
    ```
-   scout (map codebase) → architect (validate approach)
-   ↓
-   surgeon (if refactor needed)
-   ↓
-   tdd-cycle group (ordered, halt_on_failure):
-     1. tester → bg-tester-scaffold
-          • reads approved prose scaffolds under .bender/artifacts/plan/tests/
-          • writes commented-out test stubs at the real test paths
-            (sibling _test.go / .test.ts / …) with mock setup, subject construction, and
-            asserts commented out plus `// TODO - implement the Code` markers
-          • emit finding_reported(severity: info, category: "tdd_scaffolded")
-     2. crafter → bg-crafter-implement
-          • reads the stubs + source tasks, implements production code, activates the
-            commented-out assertions / mock setup as it goes
-          • may invoke bg-tester-run for its own inner feedback loop (not authoritative)
-     3. tester → bg-tester-run
-          • runs the resolved test command on the final state
-          • suite MUST pass; red → finding_reported(severity: high, category: "test_failure")
-            per failing test and halt (halt_on_failure)
-          • on green → finding_reported(severity: info, category: "tdd_green") with
-            tests_total + tests_passed + duration_ms
-   ↓
-   [REFACTOR] surgeon/crafter cleanup pass — tests stay green (re-run bg-tester-run after changes)
-   ↓
-   linter (autofix + report)
-   ↓
-   review-sweep group (ordered: false — PARALLEL DISPATCH, read-only trio):
-     reviewer ∥ sentinel ∥ benchmarker
-   ↓
-   docs-sweep group (ordered: true — SERIAL):
-     scribe (inline comments + docs; kept serial so source-edits don't
-     race the review trio's file reads)
-   ↓
-   final report (flag the TDD mode in the summary header, cite the
-   tdd_scaffolded and tdd_green findings)
+   status := {}                       # node_id → "pending" | "skipped" | "resolved" | "failed" | "blocked"
+   for each node in pipeline.nodes:
+       status[node.id] = "skipped" if when(node) is false else "pending"
+
+   while true:
+       ready := nodes where status[n.id] == "pending" AND deps_satisfied(n)
+       if ready is empty: break
+
+       sort ready by (priority desc, id asc)
+       batch := ready[:max_concurrent]
+
+       if |batch| >= 2:
+           if any two members of `batch` have overlapping write_scope.allow globs:
+               emit orchestrator_decision(parallel_dispatch_aborted,
+                    group=<inferred>, reason="write_scope_conflict",
+                    conflicting_path=<glob>, fallback_order=[ids in priority order])
+               dispatch batch members sequentially (one per subsequent turn)
+           else:
+               emit orchestrator_decision(parallel_dispatch,
+                    group=<inferred>, dispatched_agents=[...], node_ids=[...])
+               in the SAME assistant message, issue one Agent tool call per node
+       else:
+           emit orchestrator_decision(agent_assignment,
+                dispatched_agent=batch[0].agent, node_id=batch[0].id)
+           issue one Agent tool call
+
+       await every dispatched subagent (interleaved events.jsonl writes are fine)
+       for each dispatched node:
+           on success → status[id] = "resolved"
+           on agent_failed:
+               status[id] = "failed"
+               if node.halt_on_failure OR pipeline.halt_on_failure: stop walking
+           on agent_blocked → status[id] = "blocked"
+
+   emit stage_completed / stage_failed based on whether any required node is failed.
    ```
 
-   Parallel-dispatch both `review-sweep` groups per the Parallel dispatch protocol above. `docs-sweep` is `ordered: true`, so scribe runs alone in its own turn.
+   `deps_satisfied(n)` rules:
+   - `depends_mode: all-resolved` (default): every `n.depends_on` id is
+     in `status` ∈ {`resolved`, `skipped`}.
+   - `depends_mode: any-resolved`: at least one `n.depends_on` id is
+     `resolved` (skipped deps don't count for `any-resolved` — they
+     represent branches that were never active).
 
-   The `tdd-cycle` group is **ordered** so tester scaffolds first, crafter implements second, tester runs third. Switch the order at your own peril — the commented-out asserts only mean anything if crafter sees them before touching production code. The test-runner command comes from the constitution's Tests section, falling back to marker-file autodetect (see `bg-tester-run`).
+   Write-scope overlap rule: compare `write_scope.allow` globs pairwise
+   using simple shell-glob equality or prefix subset. If both nodes could
+   write the same path (e.g. both claim `**/*.go`), they must run
+   sequentially. Emit `parallel_dispatch_aborted` per the observability
+   section below and fall back to priority-ordered serial dispatch of
+   just those two nodes.
 
-   For each agent invocation (both modes):
-   - Use the **Agent tool** with `subagent_type=<agent-name>` to invoke it (the agent definitions are at `.claude/agents/<name>.md`).
-   - Pass the relevant task IDs, affected files, acceptance criteria, **and — in TDD mode — the paths of the scaffold files this agent should consume**.
-   - **Token-efficient orientation.** Tell every downstream agent to consult `.bender/cache/scout/<session-id>/index.json` BEFORE issuing its own Read / Grep / Glob calls. Scout ran as the very first step of the graph so the cache is populated; worker agents should replay from disk instead of re-reading files. Cache miss for a lookup they need? Call `bg-scout-explore` to populate it rather than bypassing the cache.
-   - **Attribution:** every event emitted during this invocation MUST carry `payload.agent: "<agent-name>"` so the viewer and `bender sessions validate` can thread events by responsible agent. This applies to `skill_invoked`, `skill_completed`, `skill_failed`, `file_changed`, `finding_reported`, `agent_progress`, plus `orchestrator_decision` events whose decision concerns a specific agent (use `payload.dispatched_agent`).
-   - Emit `agent_started`, `agent_progress` (as the agent reports back), `agent_completed` / `agent_failed` / `agent_blocked`.
+   The dispatched Agent tool call for each node MUST:
+   - Set `subagent_type` to the node's `agent`.
+   - Carry the node id in the prompt so the subagent can attribute its
+     events correctly.
+   - Tell the subagent to consult
+     `.bender/cache/scout/<session-id>/index.json` BEFORE issuing its own
+     Read / Grep / Glob calls (token efficiency).
+   - Instruct the subagent to emit `agent_started`, `agent_progress` (as
+     it reports back), and a terminal event (`agent_completed` /
+     `agent_failed` / `agent_blocked`) — all with
+     `payload.agent: "<agent-name>"`.
 
-8. **Enforce write scopes**:
+9. **Enforce write scopes** at every file-write attempt:
    - Each agent's write scope is declared in its frontmatter (`write_scope.allow` / `write_scope.deny`).
    - Before any file write, verify the path matches `allow` and does not match `deny`. If it doesn't, refuse and emit `agent_failed`.
 
-9. **Serialize concurrent same-path writes**:
-   - If two agent assignments target the same file path, dispatch them sequentially.
-
 10. **Apply the failure policy**:
     - Default: a failed agent is marked blocked; siblings continue; the final report enumerates the blocker.
-    - Strict (`--abort-on-failure`): halt pending agents on first failure.
+    - Strict (`--abort-on-failure`): halt the walk on the first failure, identical to a node-level `halt_on_failure: true`.
 
 11. **Write the final report** at `.bender/artifacts/ghu/run-<timestamp>-report.md` with frontmatter and the sections from `contracts/artifacts.md` §5. List the skipped agents/groups (from step 4) in the report header so the reviewer knows what did NOT run.
 
@@ -287,20 +309,22 @@ Same envelope as `/cry`, `/plan`, `/tdd`. Stage is **`ghu`** for every event.
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"ghu"},"type":"stage_started","payload":{"stage":"ghu","inputs":[".bender/artifacts/specs/<slug>-<ts>.md",".bender/artifacts/plan/tasks-<ts>.md"]}}
 ```
 
-### orchestrator_decision (emit per task_decomposition, agent_assignment, graph_node_transition, parallel_dispatch, parallel_dispatch_aborted, execution_mode, skip)
+### orchestrator_decision (emit per pipeline_loaded, task_decomposition, agent_assignment, graph_node_transition, parallel_dispatch, parallel_dispatch_aborted, execution_mode, skip)
 ```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"pipeline_loaded","pipeline_id":"ghu-default","nodes_total":15,"nodes_skipped_by_when":0,"max_concurrent":8,"variables":{"tdd_mode":false,"plan_refactor":false}}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"task_decomposition","tasks":["T001","T002","..."],"dependencies":[{"task":"T002","depends_on":["T001"]}]}}
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"agent_assignment","dispatched_agent":"crafter","task_ids":["T004"]}}
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"parallel_dispatch","group":"review-sweep","dispatched_agents":["reviewer","sentinel","benchmarker"]}}
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"parallel_dispatch_aborted","group":"plain-cycle","reason":"write_scope_conflict","conflicting_path":"src/pkg/foo.go"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"agent_assignment","dispatched_agent":"crafter","node_id":"plain-impl","task_ids":["T004"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"parallel_dispatch","group":"review-batch","dispatched_agents":["reviewer","sentinel","benchmarker"],"node_ids":["reviewer","sentinel","benchmarker"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"parallel_dispatch_aborted","group":"plain-batch","reason":"write_scope_conflict","conflicting_path":"**/*.go","fallback_order":["plain-impl","plain-tests"]}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"graph_node_transition","from_node":"scout","to_node":"architect"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"execution_mode","mode":"plain","scaffold_count":0}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"skip","target":"linter","alias":"lint","reason":"user_requested"}}
 ```
 
 ### orchestrator_progress (emit after every graph node transition)
-Whole-session progress as an integer percentage `[0, 100]`. The orchestrator MUST emit one per completed major node so the viewer can render a session-level progress bar. `current_step` is the human-readable node name (e.g., `"scout"`, `"tdd-cycle: bg-tester-scaffold"`, `"review-sweep"`). Baseline points: scout=10, architect=20, crafter/tester cycle mid=50, linter=70, review-sweep=85, docs-sweep=92, final report=100.
+Whole-session progress as an integer percentage `[0, 100]`. The orchestrator MUST emit one per completed pipeline node so the viewer can render a session-level progress bar. `current_step` is the node id from `.bender/pipeline.yaml` (e.g., `"scout"`, `"tdd-implement"`, `"reviewer"`). Baseline points: scout=10, architect=20, crafter/tester implementation mid=50, linter=70, review trio=85, scribe=92, report=100.
 ```json
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_progress","payload":{"percent":50,"current_step":"tdd-cycle: bg-crafter-implement","completed_nodes":["scout","architect","bg-tester-scaffold"],"remaining_nodes":["bg-tester-run","linter","review-sweep","report"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_progress","payload":{"percent":50,"current_step":"tdd-implement","completed_nodes":["scout","architect","tdd-scaffold"],"remaining_nodes":["tdd-verify","linter","reviewer","sentinel","benchmarker","scribe","report"]}}
 ```
 
 ### agent_started / agent_progress / agent_completed (or agent_failed / agent_blocked)

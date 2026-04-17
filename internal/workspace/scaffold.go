@@ -1,5 +1,7 @@
-// Package workspace materialises the embedded `defaults/claude/` tree into a project's `.claude/`
-// and (in registry.go) manages the global multi-project registry at `~/.bender/workspace.yaml`.
+// Package workspace materialises the embedded defaults tree into a project's
+// `.claude/` (Claude Code–native artefacts: agents, skills) and `.bender/`
+// (bender-owned config: pipeline.yaml, groups.yaml) plus, in registry.go,
+// manages the global multi-project registry at `~/.bender/workspace.yaml`.
 package workspace
 
 import (
@@ -26,8 +28,14 @@ type ScaffoldResult struct {
 	Overwritten []string
 }
 
-// Scaffold walks the embedded defaults tree and materialises every file under
-// `<ProjectRoot>/.claude/`. Files that already exist are preserved unless Force is true.
+// embeddedTrees lists every top-level prefix in the embedded `defaults/` FS
+// that we mirror onto disk. Adding a new bender-owned tree = one line here.
+var embeddedTrees = []string{"claude", "bender"}
+
+// Scaffold walks every top-level tree in the embedded defaults and
+// materialises files under the project root. `claude/<path>` mirrors to
+// `<root>/.claude/<path>`; `bender/<path>` mirrors to `<root>/.bender/<path>`.
+// Files that already exist are preserved unless Force is true.
 func Scaffold(opts ScaffoldOptions) (*ScaffoldResult, error) {
 	if opts.ProjectRoot == "" {
 		return nil, errors.New("workspace: ProjectRoot is required")
@@ -37,49 +45,64 @@ func Scaffold(opts ScaffoldOptions) (*ScaffoldResult, error) {
 	}
 	res := &ScaffoldResult{}
 	root := embedded.FS()
-	err := fs.WalkDir(root, "claude", func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	for _, tree := range embeddedTrees {
+		if _, err := fs.Stat(root, tree); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("stat embedded %s: %w", tree, err)
 		}
-		if d.IsDir() {
+		err := fs.WalkDir(root, tree, func(p string, d fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			if d.IsDir() {
+				return nil
+			}
+			dest := destinationFor(opts.ProjectRoot, p)
+			if dest == "" {
+				return nil
+			}
+			exists := false
+			if _, err := os.Stat(dest); err == nil {
+				exists = true
+			}
+			if exists && !opts.Force {
+				res.Preserved = append(res.Preserved, dest)
+				return nil
+			}
+			data, err := fs.ReadFile(root, p)
+			if err != nil {
+				return fmt.Errorf("read embedded %s: %w", p, err)
+			}
+			if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+				return err
+			}
+			if err := os.WriteFile(dest, data, 0o644); err != nil {
+				return err
+			}
+			if exists {
+				res.Overwritten = append(res.Overwritten, dest)
+			} else {
+				res.Created = append(res.Created, dest)
+			}
 			return nil
-		}
-		dest := destinationFor(opts.ProjectRoot, p)
-		exists := false
-		if _, err := os.Stat(dest); err == nil {
-			exists = true
-		}
-		if exists && !opts.Force {
-			res.Preserved = append(res.Preserved, dest)
-			return nil
-		}
-		data, err := fs.ReadFile(root, p)
+		})
 		if err != nil {
-			return fmt.Errorf("read embedded %s: %w", p, err)
+			return nil, err
 		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(dest, data, 0o644); err != nil {
-			return err
-		}
-		if exists {
-			res.Overwritten = append(res.Overwritten, dest)
-		} else {
-			res.Created = append(res.Created, dest)
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	return res, nil
 }
 
-// destinationFor maps an embedded path like `claude/skills/foo/SKILL.md` to a
-// destination on disk. Everything under `claude/` mirrors into
-// `<projectRoot>/.claude/`.
+// destinationFor maps an embedded path to its on-disk destination.
+// `claude/<rel>` → `<root>/.claude/<rel>`; `bender/<rel>` → `<root>/.bender/<rel>`.
+// Unknown prefixes return "" so the walker skips them.
 func destinationFor(projectRoot, embeddedPath string) string {
-	rel := strings.TrimPrefix(embeddedPath, "claude/")
-	return filepath.Join(projectRoot, ".claude", filepath.FromSlash(rel))
+	for _, tree := range embeddedTrees {
+		if rel, ok := strings.CutPrefix(embeddedPath, tree+"/"); ok {
+			return filepath.Join(projectRoot, "."+tree, filepath.FromSlash(rel))
+		}
+	}
+	return ""
 }
