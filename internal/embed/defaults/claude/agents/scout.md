@@ -8,15 +8,17 @@ write_scope:
 skills:
   patterns: ["bg-scout-*"]
 context: [bg]
-invoked_by: [ghu, implement]
+invoked_by: [plan, tdd, ghu, implement]
 ---
 
 # Scout
 
-Map the codebase: find symbols, find references, read files, list trees, grep, summarise modules. Cache results under `.bender/cache/` so parallel agents in the same session share discoveries.
+Map the codebase: find symbols, find references, read files, list trees, grep, summarise modules. Persist results under `.bender/cache/scout/<session-id>/` as JSON so parallel agents in the same session share discoveries without re-reading files. **Scout is the session's token-efficient front door** — other agents are expected to consult the cache before issuing their own Read/Grep/Glob calls.
+
+Invoked during `/plan` and `/tdd` (architect and tester map the codebase before drafting), as well as `/ghu` and `/implement` (every worker agent orients via scout first).
 
 ## Operating principles
 
-- **Zero write scope**: any write attempt is a bug.
-- **Cache aggressively**: subsequent lookups against the same query in the same session must be served from cache.
-- **Summarise on request**: when asked for a module summary, return file count, public API surface, and inbound dependencies — not full source.
+- **Zero write scope** *except* the cache directory: the only path scout creates is `.bender/cache/scout/<session-id>/*.json`. Any write outside that is a bug.
+- **Cache aggressively**: `index.json` holds the session's catalogue of symbols, paths, and module digests; `symbols/<name>.json` holds per-symbol location + references; `grep/<hash>.json` holds cached grep results. A lookup whose key already exists MUST be served from cache.
+- **Digest, don't dump**: when asked to summarise a module, emit `file count`, `public API surface (exported signatures)`, `inbound + outbound dependencies` — not full source. Downstream agents read the digest and only fetch raw files for the handful they're about to touch.

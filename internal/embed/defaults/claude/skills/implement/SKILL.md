@@ -1,7 +1,7 @@
 ---
 name: implement
 user-invocable: true
-argument-hint: "<task-id-or-title> — e.g. T012 or a unique title substring"
+argument-hint: "<task-id-or-title> [--skip=<name>[,<name>...]] — e.g. T012 --skip=lint,docs"
 context: fg
 description: "Execute a single named task from the latest approved plan. Same as /ghu but scoped to one task."
 provides: [stage, execute, single-task]
@@ -31,10 +31,11 @@ $ARGUMENTS
 3. **Locate the task** in `.bender/artifacts/plan/tasks-<ts>.md`. If the argument matches multiple tasks, list them and refuse.
 4. **Detect TDD mode** the same way `/ghu` does: glob `.bender/artifacts/plan/tests/**/*.md`; if non-empty and every scaffold is `status: approved`, walk the `tdd-cycle` group from `.claude/groups.yaml` (ordered: `bg-tester-scaffold` → `bg-crafter-implement` → `bg-tester-run`; halt_on_failure). Otherwise walk the `plain-cycle` group (parallel: `bg-crafter-implement` ∥ `bg-tester-write-and-run`). Emit `orchestrator_decision` with `decision_type: "execution_mode"` and payload `{ "mode": "tdd"|"plain", "scaffold_count": <int>, "group": "tdd-cycle"|"plain-cycle" }`.
 5. **Dispatch** exactly the agents implied by that task's `agent_hints` (or the group's skills if not declared). In TDD mode, tester scaffolds first → crafter implements → tester runs.
-6. **Run the same execution graph as `/ghu`**, pruned to the single task and its direct review/lint follow-ups (the `review-sweep` group still runs at the end).
-7. **Agent attribution.** Every event emitted during an agent's work MUST carry `payload.agent: "<agent-name>"` so the viewer and `bender sessions validate` can thread events by responsible agent — applies to `skill_invoked`, `skill_completed`, `skill_failed`, `file_changed`, `finding_reported`, `agent_progress`. Orchestrator decisions about a specific agent use `payload.dispatched_agent`.
-8. **Emit events** identically to `/ghu` — see the "Observability shape" section below (same envelope, same event types, same payload contracts) **except** set `payload.command` to `/implement` in `session_started` and set `payload.stage` to `implement` in every stage/skill/artifact event.
-9. **Write the final report** at `.bender/artifacts/ghu/run-<timestamp>-report.md` covering only the executed task. If TDD mode was active, prefix the report summary with `**TDD mode:** Red → Green → Refactor` and include the RED and GREEN finding ids.
+6. **Honor `--skip=<name>[,<name>...]`** identically to `/ghu` (same name set, same aliases, same rules: `crafter` and `scout` are not skippable; `tester` is rejected in TDD mode; unknown names error out; every resolved skip emits `orchestrator_decision` with `decision_type: "skip"`).
+7. **Run the same execution graph as `/ghu`**, pruned to the single task and its direct review/lint follow-ups (the `review-sweep` group still runs at the end unless skipped).
+8. **Agent attribution.** Every event emitted during an agent's work MUST carry `payload.agent: "<agent-name>"` so the viewer and `bender sessions validate` can thread events by responsible agent — applies to `skill_invoked`, `skill_completed`, `skill_failed`, `file_changed`, `finding_reported`, `agent_progress`. Orchestrator decisions about a specific agent use `payload.dispatched_agent`.
+9. **Emit events** identically to `/ghu` — see the "Observability shape" section below (same envelope, same event types, same payload contracts) **except** set `payload.command` to `/implement` in `session_started` and set `payload.stage` to `implement` in every stage/skill/artifact event. `session_completed.payload.skipped` carries the canonical names of any agents/groups the user bypassed.
+10. **Write the final report** at `.bender/artifacts/ghu/run-<timestamp>-report.md` covering only the executed task. Include a "Skipped" line in the summary header when `--skip` was in effect. If TDD mode was active, prefix the report summary with `**TDD mode:** Red → Green → Refactor` and include the RED and GREEN finding ids.
 
 ## Observability shape — emit verbatim, do NOT invent fields
 

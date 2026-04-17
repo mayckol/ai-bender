@@ -1,7 +1,7 @@
 ---
 name: ghu
 user-invocable: true
-argument-hint: "[--bg | --inline] [--from=<spec>] [--only=<task-id>] [--abort-on-failure]"
+argument-hint: "[--bg | --inline] [--from=<spec>] [--only=<task-id>] [--skip=<name>[,<name>...]] [--abort-on-failure]"
 context: fg
 description: "Execute the approved plan — implement, test, lint, review, and report. The only stage that writes code."
 provides: [stage, execute]
@@ -89,11 +89,32 @@ Run any `hooks.before_ghu`.
 
 3. **Honor `--only=<task>`** to scope to a single task (same as `/implement`).
 
-4. **Honor `--abort-on-failure`** to halt on the first task failure (default: continue and mark blocked).
+4. **Honor `--skip=<name>[,<name>...]`** to bypass agents or groups. Accepts the following names (aliases in parentheses):
 
-5. **Create a session directory** under `.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with `decision_type: "task_decomposition"`). The decomposition payload MUST carry the task list AND the dependency edges extracted from the tasks file: `{"decision_type":"task_decomposition","tasks":["T001","T002",...],"dependencies":[{"task":"T002","depends_on":["T001"]},...]}`. Tasks with no incoming edges are the first wave; everything else must wait for its prerequisites.
+   | Name | Alias(es) | What it skips |
+   |---|---|---|
+   | `linter` | `lint` | the linter agent + `bg-linter-*` skills |
+   | `tester` | `test`, `tests` | the tester agent (all of `bg-tester-*` and `fg-tester-*`) |
+   | `reviewer` | `review` | the reviewer agent's critique + PR summary |
+   | `sentinel` | `security`, `sec` | the sentinel agent's security pass |
+   | `benchmarker` | `perf`, `bench` | the benchmarker agent's perf pass |
+   | `scribe` | `docs` | the scribe agent's doc + inline-comment updates |
+   | `surgeon` | `refactor` | the surgeon agent's refactor pass |
+   | `architect` | — | the architect validation pass during /ghu |
+   | `review-sweep` | `reviews` | the whole `review-sweep` group (reviewer, sentinel, benchmarker, scribe) |
 
-6. **Walk the execution graph**, which depends on `tdd_mode`:
+   Rules:
+   - **`crafter` is not skippable.** `/ghu` that skips crafter produces nothing. Reject with `error: cannot skip crafter — /ghu has nothing to do without it.`
+   - **`scout` is not skippable.** Its cache is what makes downstream agents token-efficient; skipping it forces every other agent to re-read the tree.
+   - **In TDD mode**, `tester` skipping is rejected: the `tdd-cycle` group needs `bg-tester-scaffold` and `bg-tester-run`, so dropping the tester agent breaks the cycle. Print `error: --skip=tester is not compatible with TDD mode (approved scaffolds under .bender/artifacts/plan/tests/). Remove the scaffolds or drop --skip.`.
+   - **Unknown names** are a hard error listing the valid names above.
+   - Every resolved skip entry MUST emit an `orchestrator_decision` event with `decision_type: "skip"` and payload `{"target": "<canonical-name>", "reason": "user_requested", "alias": "<what the user typed>"}` so the viewer and `bender sessions validate` can show what was bypassed.
+
+5. **Honor `--abort-on-failure`** to halt on the first task failure (default: continue and mark blocked).
+
+6. **Create a session directory** under `.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with `decision_type: "task_decomposition"`). The decomposition payload MUST carry the task list AND the dependency edges extracted from the tasks file: `{"decision_type":"task_decomposition","tasks":["T001","T002",...],"dependencies":[{"task":"T002","depends_on":["T001"]},...]}`. Tasks with no incoming edges are the first wave; everything else must wait for its prerequisites.
+
+7. **Walk the execution graph**, which depends on `tdd_mode`:
 
    **Plain mode** (no approved scaffolds) — walks the `plain-cycle` + `review-sweep` groups from `.claude/groups.yaml`:
    ```
@@ -152,25 +173,26 @@ Run any `hooks.before_ghu`.
    For each agent invocation (both modes):
    - Use the **Agent tool** with `subagent_type=<agent-name>` to invoke it (the agent definitions are at `.claude/agents/<name>.md`).
    - Pass the relevant task IDs, affected files, acceptance criteria, **and — in TDD mode — the paths of the scaffold files this agent should consume**.
+   - **Token-efficient orientation.** Tell every downstream agent to consult `.bender/cache/scout/<session-id>/index.json` BEFORE issuing its own Read / Grep / Glob calls. Scout ran as the very first step of the graph so the cache is populated; worker agents should replay from disk instead of re-reading files. Cache miss for a lookup they need? Call `bg-scout-explore` to populate it rather than bypassing the cache.
    - **Attribution:** every event emitted during this invocation MUST carry `payload.agent: "<agent-name>"` so the viewer and `bender sessions validate` can thread events by responsible agent. This applies to `skill_invoked`, `skill_completed`, `skill_failed`, `file_changed`, `finding_reported`, `agent_progress`, plus `orchestrator_decision` events whose decision concerns a specific agent (use `payload.dispatched_agent`).
    - Emit `agent_started`, `agent_progress` (as the agent reports back), `agent_completed` / `agent_failed` / `agent_blocked`.
 
-6. **Enforce write scopes**:
+8. **Enforce write scopes**:
    - Each agent's write scope is declared in its frontmatter (`write_scope.allow` / `write_scope.deny`).
    - Before any file write, verify the path matches `allow` and does not match `deny`. If it doesn't, refuse and emit `agent_failed`.
 
-7. **Serialize concurrent same-path writes**:
+9. **Serialize concurrent same-path writes**:
    - If two agent assignments target the same file path, dispatch them sequentially.
 
-8. **Apply the failure policy**:
-   - Default: a failed agent is marked blocked; siblings continue; the final report enumerates the blocker.
-   - Strict (`--abort-on-failure`): halt pending agents on first failure.
+10. **Apply the failure policy**:
+    - Default: a failed agent is marked blocked; siblings continue; the final report enumerates the blocker.
+    - Strict (`--abort-on-failure`): halt pending agents on first failure.
 
-9. **Write the final report** at `.bender/artifacts/ghu/run-<timestamp>-report.md` with frontmatter and the sections from `contracts/artifacts.md` §5.
+11. **Write the final report** at `.bender/artifacts/ghu/run-<timestamp>-report.md` with frontmatter and the sections from `contracts/artifacts.md` §5. List the skipped agents/groups (from step 4) in the report header so the reviewer knows what did NOT run.
 
-10. **Emit `session_completed`** with `status: completed | failed`, `duration_ms`, `agents_summary`.
+12. **Emit `session_completed`** with `status: completed | failed`, `duration_ms`, `agents_summary`, and `skipped` (array of canonical names that were bypassed via `--skip`).
 
-11. **Print** the run summary: tasks attempted/completed, files changed, tests added, findings, blockers, report path.
+13. **Print** the run summary: tasks attempted/completed, files changed, tests added, findings, blockers, skipped agents, report path.
 
 ## Observability shape — emit verbatim, do NOT invent fields
 
@@ -186,17 +208,26 @@ Same envelope as `/cry`, `/plan`, `/tdd`. Stage is **`ghu`** for every event.
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"ghu"},"type":"stage_started","payload":{"stage":"ghu","inputs":[".bender/artifacts/specs/<slug>-<ts>.md",".bender/artifacts/plan/tasks-<ts>.md"]}}
 ```
 
-### orchestrator_decision (emit per task_decomposition, agent_assignment, graph_node_transition)
+### orchestrator_decision (emit per task_decomposition, agent_assignment, graph_node_transition, parallel_dispatch, execution_mode, skip)
 ```json
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"task_decomposition","tasks":["T001","T002","..."]}}
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"agent_assignment","agent":"crafter"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"task_decomposition","tasks":["T001","T002","..."],"dependencies":[{"task":"T002","depends_on":["T001"]}]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"agent_assignment","dispatched_agent":"crafter","task_ids":["T004"]}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"graph_node_transition","from_node":"scout","to_node":"architect"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"skip","target":"linter","alias":"lint","reason":"user_requested"}}
+```
+
+### orchestrator_progress (emit after every graph node transition)
+Whole-session progress as an integer percentage `[0, 100]`. The orchestrator MUST emit one per completed major node so the viewer can render a session-level progress bar. `current_step` is the human-readable node name (e.g., `"scout"`, `"tdd-cycle: bg-tester-scaffold"`, `"review-sweep"`). Baseline points: scout=10, architect=20, crafter/tester cycle mid=50, linter=70, review-sweep=90, final report=100.
+```json
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_progress","payload":{"percent":50,"current_step":"tdd-cycle: bg-crafter-implement","completed_nodes":["scout","architect","bg-tester-scaffold"],"remaining_nodes":["bg-tester-run","linter","review-sweep","report"]}}
 ```
 
 ### agent_started / agent_progress / agent_completed (or agent_failed / agent_blocked)
+
+Every agent MUST emit at least one `agent_progress` event mid-run so the viewer can thread per-agent progress bars alongside the session-level one. `percent` is the agent's own 0..100 estimate of how far through ITS work it is (not the session-level number); `current_step` is a human-readable label. Emit at natural boundaries (e.g., after reading files, after each skill call, after each task). Long skill invocations (>5 seconds wall time) should emit a mid-skill progress too.
 ```json
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_started","payload":{"agent":"crafter","task_ids":["T004"]}}
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_progress","payload":{"percent":42,"current_step":"applying patch","completed":["read","plan"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_progress","payload":{"agent":"crafter","percent":42,"current_step":"applying patch","completed":["read","plan"]}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_completed","payload":{"agent":"crafter","task_ids":["T004"],"duration_ms":<int>}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_failed","payload":{"agent":"crafter","task_ids":["T004"],"duration_ms":<int>,"error":"<human-readable reason>"}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"agent_blocked","payload":{"agent":"crafter","task_ids":["T004"],"error":"blocked by finding from sentinel"}}

@@ -245,6 +245,27 @@ bender sessions validate 2026-04-16T14-03-22-a3f
 | 50 | Session not found |
 | 51 | One or more schema violations |
 
+#### `bender sessions clear [<session-id>] [--all]`
+
+Remove session data from disk. Artifacts under `.bender/artifacts/` are **preserved** — they are the authored outputs of a run, not the session log.
+
+```bash
+bender sessions clear 2026-04-16T22-04-07-f6g   # remove one
+bender sessions clear --all                     # remove every session + the scout cache
+```
+
+Behavior:
+
+- `bender sessions clear <id>` removes `<.bender/sessions/<id>/>` and the matching `.bender/cache/scout/<id>/` directory.
+- `bender sessions clear --all` removes every subdirectory of `.bender/sessions/` plus the entire `.bender/cache/` tree (so the next run starts with a cold scout cache).
+- Running `bender sessions clear` with neither `<id>` nor `--all` is rejected — no accidental mass-delete.
+
+| Exit | Meaning |
+|---|---|
+| 0 | Success |
+| 50 | `<id>` not found (single-id form) |
+| 73 | Neither `<id>` nor `--all` supplied |
+
 #### `bender update [--check]`
 
 Replace the current `bender` binary with the latest release. With `--check`, only print the available version without modifying anything.
@@ -266,6 +287,35 @@ Print the binary version and exit.
 bender version
 # 0.1.0
 ```
+
+### Base stages at a glance
+
+A **stage** is a user-invocable slash command whose skill file orchestrates a single end-to-end step. Every stage reads its inputs from `.bender/artifacts/` (or the constitution), writes its outputs there, and — when long-running — tracks progress via `orchestrator_progress` events the [real-time viewer](#real-time-viewer) renders as a bar.
+
+| Stage | Command | Inputs | Outputs | Notes |
+|---|---|---|---|---|
+| bootstrap | `/bender-bootstrap` | discovered project files | `.bender/artifacts/constitution/<ts>.md` + merged `.bender/artifacts/constitution.md` | One-shot; fills the project constitution from heuristics. |
+| cry | `/cry <request>` | user natural-language request | `.bender/artifacts/cry/<slug>-<ts>.md` (status: draft → approved after `/cry confirm`) | Classifies intent and drafts the feature idea. |
+| plan | `/plan` | latest approved cry | `.bender/artifacts/specs/<slug>-<ts>.md` + `plan/data-model-<ts>.md` + `plan/risk-assessment-<ts>.md` + `plan/tasks-<ts>.md` (all draft → approved after `/plan confirm`) | Architect-led design pass. |
+| tdd *(optional)* | `/tdd [<scenario>...]` | latest approved plan | `.bender/artifacts/plan/tests/**/*.md` — prose-only scaffolds (draft → approved after `/tdd confirm`) | Enables TDD mode in `/ghu` if approved. |
+| ghu | `/ghu [--bg \| --inline] [--skip=…] [--only=…]` | approved spec + tasks (+ optional tdd scaffolds) | `.bender/sessions/<id>/` (state + events) + `.bender/artifacts/ghu/run-<ts>-report.md` + per-agent outputs | The only stage that writes source code. |
+| implement | `/implement <task-id-or-title> [--skip=…]` | same as `/ghu`, scoped to one task | same report path as `/ghu` | Pruned `/ghu` for a single task. |
+| doctor | `/bender-doctor` | `.claude/` catalog + `.bender/config` (if any) | stdout health report | Wrapper around `bender doctor` with narrative. |
+
+Progress is reported at two levels during `/ghu` / `/implement`:
+
+- **Session-level** — the orchestrator emits `orchestrator_progress` events with `{percent, current_step, completed_nodes, remaining_nodes}` after each graph-node transition. Baseline anchors: scout 10%, architect 20%, mid-cycle 50%, linter 70%, review-sweep 90%, final report 100%.
+- **Agent-level** — each worker agent emits `agent_progress` events with `{agent, percent, current_step}` so the viewer can thread per-agent progress alongside the session bar.
+
+### Extending stages
+
+A stage is just a skill file under `.claude/skills/<name>/SKILL.md` with `user-invocable: true` and `stages: [<name>]`. You can add, update, or remove stages — the bender binary doesn't hard-code them. What you DO need to keep in sync is the **orchestrator skill**: every downstream stage that consumes your stage's outputs reads from paths declared in its own SKILL.md.
+
+- **Add** a new stage: drop `.claude/skills/<your-stage>/SKILL.md` with frontmatter (`name`, `user-invocable: true`, `stages: [<your-stage>]`, `inputs`, `outputs`). If a later stage should consume your outputs, edit that stage's SKILL.md so it reads the new artifact paths.
+- **Update** a stage: edit the SKILL.md. If the change alters the artifact paths or the event shape, update every downstream consumer (the orchestrator skill of the next stage). Running `bender doctor` after the edit catches broken inputs/outputs references.
+- **Remove** a stage: delete `.claude/skills/<stage>/` and edit every downstream SKILL.md that referenced it (e.g., `/ghu` mentions approved plan artifacts; if `/plan` goes away, `/ghu` needs a new source).
+
+`bender doctor` validates the catalog; `bender sessions validate` validates each run's events. Together they catch both catalog-level and runtime-level drift after a change.
 
 ### Slash commands (run in Claude Code)
 
@@ -293,7 +343,7 @@ Low-level design. From the latest approved capture, produces a coherent plan set
 
 Optional. Mirrors the source tree under `artifacts/plan/tests/` with prose-only test descriptions per source file. No executable test code is written. `/tdd confirm` approves the scaffold set.
 
-#### `/ghu [--bg | --inline] [--from=<spec>] [--only=<task>] [--abort-on-failure]`
+#### `/ghu [--bg | --inline] [--from=<spec>] [--only=<task>] [--skip=<name>[,<name>...]] [--abort-on-failure]`
 
 Execute the approved plan. The only stage that writes code. If `/tdd` produced approved scaffolds under `.bender/artifacts/plan/tests/`, `/ghu` switches into **TDD mode** (Red → Green → Refactor): tester materialises executable tests from the scaffolds and runs them until they fail, crafter then implements until they pass, a surgeon cleanup pass keeps tests green. Otherwise it walks the plain graph (scout → architect → optional surgeon → crafter ∥ tester → linter → reviewer ∥ sentinel ∥ benchmarker ∥ scribe → final report). Both paths produce:
 - Source-tree mutations within each agent's declared write scope.
@@ -307,11 +357,27 @@ Execute the approved plan. The only stage that writes code. If `/tdd` produced a
 - `/ghu --bg` — same as default; explicit form.
 - `/ghu --inline` — opt out of the fork and run the workflow directly in the current conversation. Use this for debugging, short scoped runs (`--only=<task>`), or when you want to observe each step as it happens.
 
+**Skipping stages.** `--skip` takes a comma-separated list of agent names, group names, or their aliases:
+
+| Name | Aliases | What it skips |
+|---|---|---|
+| `linter` | `lint` | the linter pass + `bg-linter-*` |
+| `tester` | `test`, `tests` | the tester agent (rejected in TDD mode) |
+| `reviewer` | `review` | reviewer critique + PR summary |
+| `sentinel` | `security`, `sec` | security sweep |
+| `benchmarker` | `perf`, `bench` | perf pass |
+| `scribe` | `docs` | doc + inline-comment updates |
+| `surgeon` | `refactor` | refactor pass |
+| `architect` | — | architect validation during /ghu |
+| `review-sweep` | `reviews` | the whole parallel reviewer ∥ sentinel ∥ benchmarker ∥ scribe fan-out |
+
+`crafter` and `scout` are not skippable (the former because the run would produce nothing, the latter because its cache is what keeps every other agent token-efficient). Each resolved skip is recorded as an `orchestrator_decision` event with `decision_type: "skip"`, and the run report's summary header lists the bypassed names.
+
 Refuses to start if any required upstream artifact is missing. With `--abort-on-failure`, halts pending agents on first failure; default policy marks the failed agent as blocked and continues siblings.
 
-#### `/implement <task-id-or-title>`
+#### `/implement <task-id-or-title> [--skip=<name>[,<name>...]]`
 
-`/ghu` scoped to a single task from the latest approved plan. All write-scope, failure-policy, and serialization rules from `/ghu` apply identically.
+`/ghu` scoped to a single task from the latest approved plan. All write-scope, failure-policy, `--skip`, and serialization rules from `/ghu` apply identically.
 
 #### `/bender-doctor`
 

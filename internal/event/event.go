@@ -44,6 +44,7 @@ const (
 	TypeStageCompleted    Type = "stage_completed"
 	TypeStageFailed       Type = "stage_failed"
 	TypeOrchDecision      Type = "orchestrator_decision"
+	TypeOrchProgress      Type = "orchestrator_progress"
 	TypeAgentStarted      Type = "agent_started"
 	TypeAgentCompleted    Type = "agent_completed"
 	TypeAgentFailed       Type = "agent_failed"
@@ -64,7 +65,7 @@ func KnownTypes() []Type {
 	return []Type{
 		TypeSessionStarted,
 		TypeStageStarted, TypeStageCompleted, TypeStageFailed,
-		TypeOrchDecision,
+		TypeOrchDecision, TypeOrchProgress,
 		TypeAgentStarted, TypeAgentCompleted, TypeAgentFailed, TypeAgentBlocked,
 		TypeAgentProgress, TypeAgentLog,
 		TypeSkillInvoked, TypeSkillCompleted, TypeSkillFailed,
