@@ -34,11 +34,13 @@ export function SessionTimeline({ params }: Props) {
   const [connected, setConnected] = useState(false);
   const [agentFilter, setAgentFilter] = useState<Set<string> | null>(null);
   const [view, setView] = useState<TimelineView>('flow');
+  const [effectiveStatus, setEffectiveStatus] = useState<string | null>(null);
 
+  const displayStatus = effectiveStatus ?? state?.status;
   const frozen =
-    state?.status === 'completed' ||
-    state?.status === 'failed' ||
-    state?.status === 'awaiting_confirm';
+    displayStatus === 'completed' ||
+    displayStatus === 'failed' ||
+    displayStatus === 'awaiting_confirm';
   const liveClass = frozen ? 'frozen' : connected ? 'connected' : '';
 
   const agents = useMemo(() => distinctAgents(events), [events]);
@@ -90,6 +92,7 @@ export function SessionTimeline({ params }: Props) {
               const snap = JSON.parse(ev.data) as SessionExport;
               setState(snap.state);
               setEvents(snap.events);
+              if (snap.effective_status) setEffectiveStatus(snap.effective_status);
             } catch (err) { setError(String(err)); }
           },
           event: (ev) => {
@@ -117,6 +120,7 @@ export function SessionTimeline({ params }: Props) {
           if (!mounted) return;
           setState(snap.state);
           setEvents(snap.events);
+          if (snap.effective_status) setEffectiveStatus(snap.effective_status);
           setPending(false);
           setError(null);
           subscribe();
@@ -216,8 +220,8 @@ export function SessionTimeline({ params }: Props) {
             <dt>Command</dt><dd>{state.command}</dd>
             <dt>Status</dt>
             <dd>
-              <span class={`status-pill ${state.status}`}>
-                {state.status === 'awaiting_confirm' ? 'awaiting confirm' : state.status}
+              <span class={`status-pill ${displayStatus}`}>
+                {displayStatus === 'awaiting_confirm' ? 'awaiting confirm' : displayStatus}
               </span>
             </dd>
             <dt>Started</dt><dd>{state.started_at}</dd>

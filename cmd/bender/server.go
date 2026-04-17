@@ -18,6 +18,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/mayckol/ai-bender/internal/server"
+	"github.com/mayckol/ai-bender/internal/workspace"
 )
 
 const (
@@ -226,11 +227,25 @@ func serveForeground(cmd *cobra.Command, root, addr, pidFile string) error {
 
 func resolveServerProject(g *globalFlags, sf *serverFlags) (string, error) {
 	// Precedence: explicit --project on `server` > root --project > cwd.
-	if sf.projectArg != "" {
-		return filepath.Abs(sf.projectArg)
+	// For either --project value, try registry lookup first (names like
+	// `ui-test`) and only fall back to treating the value as a filesystem
+	// path when the name isn't registered.
+	name := sf.projectArg
+	if name == "" {
+		name = g.project
 	}
-	if g.project != "" {
-		return resolveProjectRoot(g)
+	if name != "" {
+		if _, path, err := workspace.Resolve(name, ""); err == nil && path != "" {
+			return path, nil
+		}
+		abs, err := filepath.Abs(name)
+		if err != nil {
+			return "", err
+		}
+		if info, err := os.Stat(abs); err == nil && info.IsDir() {
+			return abs, nil
+		}
+		return "", fmt.Errorf("server: --project=%q is neither a registered project name nor an existing directory", name)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {

@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import { Layout } from '../components/Layout.tsx';
+import { LiveProjectFlow } from '../components/LiveProjectFlow.tsx';
+import { SegmentedToggle } from '../components/SegmentedToggle.tsx';
 import { agentColor } from '../lib/agents.ts';
 import {
   deleteAllSessions,
@@ -10,11 +12,14 @@ import {
 } from '../lib/api.ts';
 import { subscribeSSE } from '../lib/sse.ts';
 
+type View = 'list' | 'flow';
+
 export function SessionList() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [view, setView] = useState<View>('list');
 
   useEffect(() => {
     let mounted = true;
@@ -68,6 +73,15 @@ export function SessionList() {
       title="bender — stages"
       right={
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <SegmentedToggle
+            ariaLabel="stages view"
+            value={view}
+            onChange={setView}
+            options={[
+              { value: 'list', label: 'List', glyph: '≡' },
+              { value: 'flow', label: 'Flow', glyph: '◈' },
+            ]}
+          />
           {sessions.length > 0 && (
             <button
               type="button"
@@ -84,60 +98,111 @@ export function SessionList() {
       }
     >
       {error && <div class="card" style={{ color: 'var(--err)' }}>Error: {error}</div>}
-      <div class="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {sessions.length === 0 ? (
-          <div class="empty">No stages yet. Run a slash command in this project.</div>
-        ) : (
-          <table class="sessions">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Command</th>
-                <th>Status</th>
-                <th>Agents</th>
-                <th>Skills</th>
-                <th>Started</th>
-                <th>Duration</th>
-                <th>Files</th>
-                <th aria-label="actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {sessions.map((s) => (
-                <tr key={s.id}>
-                  <td><a href={`/sessions/${s.id}`}>{s.id}</a></td>
-                  <td>{s.state.command}</td>
-                  <td><StatusPill status={s.state.status} /></td>
-                  <td><AgentCell agents={s.agents ?? []} /></td>
-                  <td><SkillCell skills={s.skills ?? []} /></td>
-                  <td>{s.state.started_at}</td>
-                  <td>{fmtDuration(s.duration_ms)}</td>
-                  <td>{s.state.files_changed ?? 0}</td>
-                  <td class="row-actions">
-                    <button
-                      type="button"
-                      class="row-delete"
-                      disabled={busy !== null}
-                      onClick={() => onDelete(s.id)}
-                      title={`Remove ${s.id}`}
-                      aria-label={`Remove ${s.id}`}
-                    >
-                      {busy === s.id ? '…' : '×'}
-                    </button>
-                  </td>
+
+      {view === 'flow' ? (
+        <section class="card card-projflow">
+          <header class="card-frame-head">
+            <span class="card-frame-kicker">pipeline</span>
+            <h2>Project flow</h2>
+            <span class="card-frame-rule" />
+          </header>
+          <LiveProjectFlow sessions={sessions} />
+        </section>
+      ) : (
+        <div class="card" style={{ padding: 0, overflow: 'hidden' }}>
+          {sessions.length === 0 ? (
+            <div class="empty">No stages yet. Run a slash command in this project.</div>
+          ) : (
+            <table class="sessions">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Command</th>
+                  <th>Status</th>
+                  <th>Agents</th>
+                  <th>Skills</th>
+                  <th>Started</th>
+                  <th>Duration</th>
+                  <th>Files</th>
+                  <th aria-label="actions" />
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {sessions.map((s) => (
+                  <StageRow
+                    key={s.id}
+                    session={s}
+                    busy={busy}
+                    onDelete={() => onDelete(s.id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </Layout>
   );
 }
 
-function StatusPill({ status }: { status: string }) {
+interface StageRowProps {
+  session: SessionSummary;
+  busy: string | null;
+  onDelete: () => void;
+}
+
+function StageRow({ session: s, busy, onDelete }: StageRowProps) {
+  const status = s.effective_status ?? s.state.status;
+  const isRunning = s.state.status === 'running';
+  return (
+    <tr class={`stage-row${isRunning ? ' stage-row-live' : ''} stage-row-${status}`}>
+      <td><a href={`/sessions/${s.id}`}>{s.id}</a></td>
+      <td>{s.state.command}</td>
+      <td><StatusPill status={status} running={isRunning} /></td>
+      <td><AgentCell agents={s.agents ?? []} /></td>
+      <td><SkillCell skills={s.skills ?? []} /></td>
+      <td>{s.state.started_at}</td>
+      <td><DurationCell durationMs={s.duration_ms} session={s} running={isRunning} /></td>
+      <td>{s.state.files_changed ?? 0}</td>
+      <td class="row-actions">
+        <button
+          type="button"
+          class="row-delete"
+          disabled={busy !== null}
+          onClick={onDelete}
+          title={`Remove ${s.id}`}
+          aria-label={`Remove ${s.id}`}
+        >
+          {busy === s.id ? '…' : '×'}
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function StatusPill({ status, running }: { status: string; running: boolean }) {
   const label = status === 'awaiting_confirm' ? 'awaiting confirm' : status;
-  return <span class={`status-pill ${status}`}>{label}</span>;
+  return (
+    <span class={`status-pill ${status}${running ? ' is-live' : ''}`}>
+      {running && <span class="status-pill-heart" aria-hidden="true" />}
+      {label}
+    </span>
+  );
+}
+
+function DurationCell({ durationMs, session: s, running }: { durationMs: number; session: SessionSummary; running: boolean }) {
+  if (!running) return <>{fmtDuration(durationMs)}</>;
+  return <LiveDuration startedAt={s.state.started_at} />;
+}
+
+function LiveDuration({ startedAt }: { startedAt: string }) {
+  const start = useMemo(() => Date.parse(startedAt) || Date.now(), [startedAt]);
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((x) => x + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return <span class="live-duration">{fmtDuration(Date.now() - start)}</span>;
 }
 
 function AgentCell({ agents }: { agents: string[] }) {

@@ -125,18 +125,19 @@ func (h *handler) listSessions(w http.ResponseWriter, _ *http.Request) {
 	}
 	summaries := make([]sessionSummary, 0, len(listings))
 	for _, l := range listings {
-		summaries = append(summaries, buildSummary(l))
+		summaries = append(summaries, buildSummary(l, listings))
 	}
 	writeJSON(w, http.StatusOK, summaries)
 }
 
-func buildSummary(l session.Listing) sessionSummary {
+func buildSummary(l session.Listing, peers []session.Listing) sessionSummary {
 	sum := sessionSummary{
-		ID:         l.ID,
-		State:      l.State,
-		DurationMS: l.Duration.Milliseconds(),
-		Agents:     []string{},
-		Skills:     []string{},
+		ID:              l.ID,
+		State:           l.State,
+		DurationMS:      l.Duration.Milliseconds(),
+		Agents:          []string{},
+		Skills:          []string{},
+		EffectiveStatus: computeEffectiveStatus(l.State, peers),
 	}
 	if events, err := session.SummarizeEvents(l.Path); err == nil {
 		sum.Agents = events.Agents
@@ -152,7 +153,19 @@ func (h *handler) snapshotSession(w http.ResponseWriter, _ *http.Request, dir st
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	h.enrichSnapshotWithEffectiveStatus(snap)
 	writeJSON(w, http.StatusOK, snap)
+}
+
+func (h *handler) enrichSnapshotWithEffectiveStatus(snap *sessionSnapshot) {
+	if snap == nil {
+		return
+	}
+	peers, err := session.List(h.root)
+	if err != nil {
+		return
+	}
+	snap.EffectiveStatus = computeEffectiveStatus(snap.State, peers)
 }
 
 // GET /api/sessions/:id/stream (SSE)
@@ -169,6 +182,7 @@ func (h *handler) streamSession(w http.ResponseWriter, r *http.Request, _ string
 		_ = sw.writeRaw("error", err.Error())
 		return
 	}
+	h.enrichSnapshotWithEffectiveStatus(snap)
 	if err := sw.write("snapshot", snap); err != nil {
 		return
 	}
@@ -237,7 +251,7 @@ func (h *handler) streamSessions(w http.ResponseWriter, r *http.Request) {
 		}
 		summaries := make([]sessionSummary, 0, len(listings))
 		for _, l := range listings {
-			summaries = append(summaries, buildSummary(l))
+			summaries = append(summaries, buildSummary(l, listings))
 		}
 		return sw.write("snapshot", summaries) == nil
 	}
@@ -318,16 +332,18 @@ func reportPath(projectRoot, sessionID string) string {
 }
 
 type sessionSummary struct {
-	ID         string        `json:"id"`
-	State      session.State `json:"state"`
-	DurationMS int64         `json:"duration_ms"`
-	Agents     []string      `json:"agents"`
-	Skills     []string      `json:"skills"`
+	ID              string        `json:"id"`
+	State           session.State `json:"state"`
+	DurationMS      int64         `json:"duration_ms"`
+	Agents          []string      `json:"agents"`
+	Skills          []string      `json:"skills"`
+	EffectiveStatus string        `json:"effective_status"`
 }
 
 type sessionSnapshot struct {
-	State  session.State  `json:"state"`
-	Events []*event.Event `json:"events"`
+	State           session.State  `json:"state"`
+	Events          []*event.Event `json:"events"`
+	EffectiveStatus string         `json:"effective_status"`
 }
 
 func loadSnapshot(dir string) (*sessionSnapshot, error) {
@@ -339,7 +355,37 @@ func loadSnapshot(dir string) (*sessionSnapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &sessionSnapshot{State: *state, Events: events}, nil
+	return &sessionSnapshot{State: *state, Events: events, EffectiveStatus: string(state.Status)}, nil
+}
+
+// computeEffectiveStatus derives the status to render in the UI. It exists
+// because a `/cry` draft session ends at `awaiting_confirm` — an honest
+// record of what happened in THAT session — but once a later `/cry confirm`
+// session lands, the user's mental model is "this is done". We keep the
+// draft's `state.json` untouched (no retroactive mutation) and surface an
+// effective status derived from the sibling set.
+//
+// Rule: if `state.status == "awaiting_confirm"` AND a sibling session in
+// `peers` has `command = "<this.command> confirm"` with a later `started_at`
+// AND terminal `status = "completed"`, effective status is `completed`.
+// Otherwise, effective status equals `state.status`.
+func computeEffectiveStatus(state session.State, peers []session.Listing) string {
+	if state.Status != "awaiting_confirm" {
+		return state.Status
+	}
+	confirmCmd := strings.TrimSpace(state.Command) + " confirm"
+	for _, p := range peers {
+		if p.State.Command != confirmCmd {
+			continue
+		}
+		if !p.State.StartedAt.After(state.StartedAt) {
+			continue
+		}
+		if p.State.Status == "completed" {
+			return "completed"
+		}
+	}
+	return state.Status
 }
 
 func readEvents(path string) ([]*event.Event, error) {
