@@ -214,11 +214,13 @@ func (h *handler) streamSession(w http.ResponseWriter, r *http.Request, _ string
 
 // GET /api/sessions/stream (SSE, list-level)
 //
-// Re-emits a full snapshot every 3s instead of relying on fsnotify. The list
+// Re-emits a full snapshot every 1s instead of relying on fsnotify. The list
 // is tiny (a few KB at most) and polling catches both new session directories
 // AND status transitions inside existing ones — fsnotify's kqueue backend on
-// macOS misses the latter and is flaky for the former. Preact re-keys rows by
-// id, so unchanged rows don't re-render client-side.
+// macOS misses the latter and is flaky for the former. 1s keeps the inter-
+// session gap (prior session ending → next session appearing) imperceptible
+// while staying cheap. Preact re-keys rows by id, so unchanged rows don't
+// re-render client-side.
 func (h *handler) streamSessions(w http.ResponseWriter, r *http.Request) {
 	sw, err := newSSEWriter(w)
 	if err != nil {
@@ -245,7 +247,7 @@ func (h *handler) streamSessions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
 	for {
