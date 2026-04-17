@@ -61,7 +61,7 @@ Note: `bender init` only materializes the `.claude/` workspace. The `.specify/sc
 # 1. Scaffold a project
 cd ~/projects/my-service
 bender init
-# → .claude/{skills,agents}, .claude/groups.yaml, .bender/config.yaml, .bender/artifacts/constitution.md
+# → .claude/{skills,agents} (Claude Code native), .bender/{pipeline.yaml,groups.yaml,artifacts/constitution.md} (bender-owned config + runtime)
 
 # 2. (optional) register it for cross-project tooling
 bender register-project ~/projects/my-service --name my-service
@@ -402,7 +402,7 @@ Fills the three constitution sections (`Purpose`, `Conventions`, `Glossary`) tha
 | `benchmarker` | Performance analysis with measurement | read-only; writes findings to `artifacts/ghu/perf/` |
 | `surgeon` | Behavior-preserving refactors (tests pass before AND after) | source files |
 
-### Default groups (named selectors in `.claude/groups.yaml`)
+### Default groups (named selectors in `.bender/groups.yaml`)
 
 | Group | Purpose | Selector |
 |---|---|---|
@@ -432,11 +432,12 @@ The fallbacks produce the same artifact layout the binary does. AI-driven slash 
 
 ```
 your-project/
-├── .claude/                        # configuration consumed by Claude Code
+├── .claude/                        # Claude Code–native artefacts
 │   ├── agents/                     #   10 default subagents
-│   ├── skills/                     #   7 slash-command skills + 20 worker skills
-│   └── groups.yaml                 #   named selectors
-├── .bender/                        # everything bender produces — the only bender root
+│   └── skills/                     #   7 slash-command skills + 20 worker skills
+├── .bender/                        # bender-owned config + runtime — the only bender root
+│   ├── pipeline.yaml               #   declarative execution DAG for /ghu + /implement
+│   ├── groups.yaml                 #   named skill-selector bundles
 │   ├── artifacts/                  #   human-readable pipeline output (commit this)
 │   │   ├── constitution.md         #     current constitution
 │   │   ├── constitution/<ts>.md    #     prior revisions
@@ -500,7 +501,7 @@ Agent body / persona prose goes here.
 
 Drop a new skill into `.claude/skills/<name>/SKILL.md`. Every agent whose selector matches it will pick it up on the next `bender doctor` and the next slash-command run. No registration, no rebuild.
 
-Drop `.claude/agents/<name>.md` to override an embedded default agent (same-name fully replaces). Edit `.claude/groups.yaml` to redefine groups.
+Drop `.claude/agents/<name>.md` to override an embedded default agent (same-name fully replaces). Edit `.bender/groups.yaml` to redefine group selectors. Edit `.bender/pipeline.yaml` to reshape the `/ghu` + `/implement` execution DAG — add nodes, change dependencies, tune `max_concurrent`, gate branches with `when` expressions. No code changes required; `bender doctor` validates your edits.
 
 Per-project tweaks without forking go in `.bender/config.yaml`:
 
@@ -548,6 +549,22 @@ When `/ghu --bg` dispatches, the SKILL.md instructs Claude Code to print the vie
 The dev-time Bun server under `ui/` (`cd ui && bun run dev`) is kept for fast client iteration (hot rebundle on source edits). `bender server` serves the same UI but from an embedded bundle baked into the binary, so `go install github.com/mayckol/ai-bender/cmd/bender@latest` is all anyone needs to run the viewer.
 
 See [`ui/README.md`](ui/README.md) for the HTTP API and test commands.
+
+## Upgrade notes — v0.17.0
+
+Bender-owned configuration moved out of `.claude/` into `.bender/`. `.claude/` is now reserved for Claude Code–native artefacts (agents + skills); `.bender/` owns every bender-invented file (`pipeline.yaml` + `groups.yaml` + runtime state).
+
+Migration for projects scaffolded on v0.16 or earlier:
+
+```bash
+cd path/to/your-project
+bender sync-defaults --force
+bender doctor         # must report `status: healthy`
+```
+
+`sync-defaults --force` creates `.bender/pipeline.yaml` and `.bender/groups.yaml`. The legacy `.claude/groups.yaml` is **left on disk** (non-destructive migration); no runtime code reads it anymore. Delete it by hand whenever convenient.
+
+What changed in the run-time model: `/ghu` and `/implement` no longer follow the prose ASCII graph in their SKILL documents. They load `.bender/pipeline.yaml` and walk it as a declarative DAG — parallelism is emergent from the dependency structure, and `priority` only breaks ties when more nodes are ready than `max_concurrent` allows. Add/remove/reorder pipeline nodes by editing that one YAML file; no SKILL or agent edits required.
 
 ## Documentation
 

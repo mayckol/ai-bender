@@ -16,6 +16,7 @@ import (
 	"github.com/mayckol/ai-bender/internal/agent"
 	embedded "github.com/mayckol/ai-bender/internal/embed"
 	"github.com/mayckol/ai-bender/internal/group"
+	"github.com/mayckol/ai-bender/internal/pipeline"
 	"github.com/mayckol/ai-bender/internal/skill"
 	"github.com/mayckol/ai-bender/internal/types"
 )
@@ -39,6 +40,7 @@ const (
 	CategoryMissingTool     Category = "missing-tool"
 	CategoryDuplicate       Category = "duplicate"
 	CategoryContextConflict Category = "context-conflict"
+	CategoryPipeline        Category = "pipeline"
 )
 
 // Issue is one finding.
@@ -88,25 +90,27 @@ func (r *Report) HasWarnings() bool {
 	return false
 }
 
-// Run loads the catalog at projectRoot/.claude (overlaid on the embedded defaults) and produces a Report.
+// Run loads the catalog at projectRoot/.claude (overlaid on the embedded defaults)
+// plus any bender-owned config at projectRoot/.bender and produces a Report.
 func Run(projectRoot string) (*Report, error) {
-	userFS := userClaudeFS(projectRoot)
+	userClaude := userClaudeFS(projectRoot)
+	userBender := userBenderFS(projectRoot)
 
-	skillCat, skillWarnings, err := skill.LoadCatalog(embedded.FS(), userFS)
+	skillCat, skillWarnings, err := skill.LoadCatalog(embedded.FS(), userClaude)
 	if err != nil {
 		return nil, fmt.Errorf("doctor: load skills: %w", err)
 	}
-	agentReg, agentWarnings, err := agent.LoadRegistry(embedded.FS(), userFS)
+	agentReg, agentWarnings, err := agent.LoadRegistry(embedded.FS(), userClaude)
 	if err != nil {
 		return nil, fmt.Errorf("doctor: load agents: %w", err)
 	}
-	groupsDefault, err := group.LoadFromFS(embedded.FS(), "claude/groups.yaml")
+	groupsDefault, err := group.LoadFromFS(embedded.FS(), "bender/groups.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("doctor: load default groups: %w", err)
 	}
 	groupsUser := map[string]*group.Group{}
-	if userFS != nil {
-		groupsUser, err = group.LoadFromFS(userFS, "groups.yaml")
+	if userBender != nil {
+		groupsUser, err = group.LoadFromFS(userBender, "groups.yaml")
 		if err != nil {
 			return nil, fmt.Errorf("doctor: load user groups: %w", err)
 		}
@@ -127,9 +131,70 @@ func Run(projectRoot string) (*Report, error) {
 	r.checkBrokenSelectors(skillCat, agentReg)
 	r.checkEmptySkillSets(skillCat, agentReg)
 	r.checkMissingTools(skillCat)
+	r.checkPipeline(userBender, skillCat, agentReg)
 
 	return r, nil
 }
+
+// checkPipeline loads pipeline.yaml (user override at .bender/pipeline.yaml
+// preferred, embed default otherwise) and reports violations surfaced by
+// pipeline.Validate. Missing pipeline.yaml is tolerated here so a project
+// without one still passes doctor — the runtime loader decides whether
+// that's fatal.
+func (r *Report) checkPipeline(userBenderFS fs.FS, cat *skill.Catalog, reg *agent.Registry) {
+	pl, source, err := loadPipeline(userBenderFS)
+	if err != nil {
+		r.Issues = append(r.Issues, Issue{
+			Severity: SeverityError,
+			Category: CategoryPipeline,
+			Subject:  source,
+			Message:  err.Error(),
+		})
+		return
+	}
+	if pl == nil {
+		return
+	}
+	for _, v := range pipeline.Validate(pl, pipelineCatalog{skills: cat, agents: reg}) {
+		r.Issues = append(r.Issues, Issue{
+			Severity: SeverityError,
+			Category: CategoryPipeline,
+			Subject:  v.NodeID,
+			Message:  v.Message,
+			Path:     source,
+		})
+	}
+}
+
+func loadPipeline(userBenderFS fs.FS) (*pipeline.Pipeline, string, error) {
+	if userBenderFS != nil {
+		pl, err := pipeline.LoadFromFS(userBenderFS, "pipeline.yaml")
+		switch {
+		case err == nil:
+			return pl, ".bender/pipeline.yaml", nil
+		case errors.Is(err, pipeline.ErrNotFound):
+			// fall through to embed default
+		default:
+			return nil, ".bender/pipeline.yaml", err
+		}
+	}
+	pl, err := pipeline.LoadFromFS(embedded.FS(), "bender/pipeline.yaml")
+	switch {
+	case err == nil:
+		return pl, "embedded:bender/pipeline.yaml", nil
+	case errors.Is(err, pipeline.ErrNotFound):
+		return nil, "", nil
+	}
+	return nil, "embedded:bender/pipeline.yaml", err
+}
+
+type pipelineCatalog struct {
+	skills *skill.Catalog
+	agents *agent.Registry
+}
+
+func (pc pipelineCatalog) HasSkill(name string) bool { return pc.skills.Get(name) != nil }
+func (pc pipelineCatalog) HasAgent(name string) bool { return pc.agents.Get(name) != nil }
 
 func (r *Report) checkBrokenSelectors(cat *skill.Catalog, reg *agent.Registry) {
 	for _, a := range reg.All() {
@@ -239,15 +304,20 @@ func (r *Report) checkMissingTools(cat *skill.Catalog) {
 }
 
 func userClaudeFS(projectRoot string) fs.FS {
+	return userSubFS(projectRoot, ".claude")
+}
+
+func userBenderFS(projectRoot string) fs.FS {
+	return userSubFS(projectRoot, ".bender")
+}
+
+func userSubFS(projectRoot, sub string) fs.FS {
 	if projectRoot == "" {
 		return nil
 	}
-	root := filepath.Join(projectRoot, ".claude")
+	root := filepath.Join(projectRoot, sub)
 	info, err := os.Stat(root)
 	if err != nil || !info.IsDir() {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil
-		}
 		return nil
 	}
 	return os.DirFS(root)

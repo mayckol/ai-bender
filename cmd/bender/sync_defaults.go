@@ -2,20 +2,19 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/mayckol/ai-bender/internal/workspace"
 )
 
-func newSyncDefaultsCmd(_ *globalFlags) *cobra.Command {
+func newSyncDefaultsCmd(g *globalFlags) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
 		Use:   "sync-defaults",
 		Short: "Re-materialize embedded defaults; preserves user-modified files unless --force",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			root, err := os.Getwd()
+			root, err := resolveProjectRoot(g)
 			if err != nil {
 				return err
 			}

@@ -1,7 +1,8 @@
 // Package embed exposes the embedded `defaults/` tree as a fs.FS.
 //
-// The materializer in internal/workspace walks this tree, mirroring it into the
-// project's `.claude/` (skills, agents, groups.yaml).
+// The materializer in internal/workspace walks this tree, mirroring it into
+// the project's `.claude/` (Claude Code–native artefacts: skills, agents)
+// and `.bender/` (bender-owned config: pipeline.yaml, groups.yaml).
 package embed
 
 import (

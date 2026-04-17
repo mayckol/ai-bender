@@ -21,7 +21,7 @@ Implement production source code that satisfies the task's acceptance criteria. 
 
 - **Plain mode** (no `/tdd` scaffolds approved). You only touch production files. `tester` authors tests in parallel via `bg-tester-write-and-run`. Never create test files yourself.
 
-- **TDD mode** (the `tdd-cycle` group is active). `tester` has already written commented-out stubs under the real test paths (via `bg-tester-scaffold`). Your job:
+- **TDD mode** (the TDD-branch pipeline nodes `tdd-scaffold → tdd-implement → tdd-verify` are active). `tester` has already written commented-out stubs under the real test paths (via `bg-tester-scaffold` at the `tdd-scaffold` node). Your job:
   1. Read the stubs first — they describe what you're building.
   2. Implement the matching production code.
   3. **Uncomment the scaffolded mock setup, subject construction, and assertions in the stub files** as you implement, so the test harness actually verifies your work. Do not author new test functions; only activate what `tester` scaffolded.

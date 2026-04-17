@@ -1,3 +1,8 @@
+# Named skill-selector bundles. NOT the authoritative orchestration spec —
+# that's `.bender/pipeline.yaml`. This file is kept for pattern/tag-based
+# reusable skill references (e.g., fanning out over `bg-sentinel-*`).
+# `/ghu` walks the pipeline, not these groups.
+
 groups:
   pre-implementation-checks:
     description: "Validations run before crafter begins writing code (e.g., data-model and api-contract checks)."
