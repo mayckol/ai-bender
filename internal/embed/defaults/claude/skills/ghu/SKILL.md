@@ -95,47 +95,59 @@ Run any `hooks.before_ghu`.
 
 6. **Walk the execution graph**, which depends on `tdd_mode`:
 
-   **Plain mode** (no approved scaffolds):
+   **Plain mode** (no approved scaffolds) — walks the `plain-cycle` + `review-sweep` groups from `.claude/groups.yaml`:
    ```
    scout (map codebase) → architect (validate approach)
    ↓
    surgeon (if refactor needed)
    ↓
-   crafter (implement) ∥ tester (write tests)
+   plain-cycle group (parallel, halt_on_failure=false):
+     crafter → bg-crafter-implement   ∥   tester → bg-tester-write-and-run
    ↓
    linter (autofix + report)
    ↓
-   reviewer ∥ sentinel ∥ benchmarker ∥ scribe
+   review-sweep group (parallel, halt_on_failure=false):
+     reviewer ∥ sentinel ∥ benchmarker ∥ scribe
    ↓
    final report
    ```
 
-   **TDD mode** (approved scaffolds present) — Red → Green → Refactor:
+   **TDD mode** (approved scaffolds present) — walks the `tdd-cycle` group from `.claude/groups.yaml`:
    ```
    scout (map codebase) → architect (validate approach)
    ↓
    surgeon (if refactor needed)
    ↓
-   [RED] tester materialises executable tests from the prose scaffolds and RUNS them
-          • tests MUST fail (or not compile) at this point — emit finding_reported(severity: info, category: "tdd_red")
-            describing what's failing and why
-          • if ANY test unexpectedly PASSES before implementation, emit finding_reported(severity: medium,
-            category: "tdd_bogus_green") flagging the specific test — it probably does not assert the new behavior
+   tdd-cycle group (ordered, halt_on_failure):
+     1. tester → bg-tester-scaffold
+          • reads approved prose scaffolds under .bender/artifacts/plan/tests/
+          • writes commented-out test stubs at the real test paths
+            (sibling _test.go / .test.ts / …) with mock setup, subject construction, and
+            asserts commented out plus `// TODO - implement the Code` markers
+          • emit finding_reported(severity: info, category: "tdd_scaffolded")
+     2. crafter → bg-crafter-implement
+          • reads the stubs + source tasks, implements production code, activates the
+            commented-out assertions / mock setup as it goes
+          • may invoke bg-tester-run for its own inner feedback loop (not authoritative)
+     3. tester → bg-tester-run
+          • runs the resolved test command on the final state
+          • suite MUST pass; red → finding_reported(severity: high, category: "test_failure")
+            per failing test and halt (halt_on_failure)
+          • on green → finding_reported(severity: info, category: "tdd_green") with
+            tests_total + tests_passed + duration_ms
    ↓
-   [GREEN] crafter implements until the RED tests pass
-          • crafter MUST re-run the tester's suite after each meaningful edit
-          • on green, emit finding_reported(severity: info, category: "tdd_green") with the duration and test count
-   ↓
-   [REFACTOR] surgeon/crafter cleanup pass — tests stay green
+   [REFACTOR] surgeon/crafter cleanup pass — tests stay green (re-run bg-tester-run after changes)
    ↓
    linter (autofix + report)
    ↓
-   reviewer ∥ sentinel ∥ benchmarker ∥ scribe
+   review-sweep group (parallel, halt_on_failure=false):
+     reviewer ∥ sentinel ∥ benchmarker ∥ scribe
    ↓
-   final report (flag the TDD mode in the summary header)
+   final report (flag the TDD mode in the summary header, cite the
+   tdd_scaffolded and tdd_green findings)
    ```
 
-   In TDD mode, crafter and tester are **sequential**, not parallel. Tests lead.
+   The `tdd-cycle` group is **ordered** so tester scaffolds first, crafter implements second, tester runs third. Switch the order at your own peril — the commented-out asserts only mean anything if crafter sees them before touching production code. The test-runner command comes from the constitution's Tests section, falling back to marker-file autodetect (see `bg-tester-run`).
 
    For each agent invocation (both modes):
    - Use the **Agent tool** with `subagent_type=<agent-name>` to invoke it (the agent definitions are at `.claude/agents/<name>.md`).
