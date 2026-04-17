@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { agentColor } from '../lib/agents.ts';
 import type { BenderEvent, SessionExport, SessionState, SessionSummary } from '../lib/api.ts';
@@ -56,6 +56,8 @@ export function LiveProjectFlow({ sessions }: Props) {
 
   const waves = useMemo(() => buildFlowWaves(events, state, isLive), [events, state, isLive]);
 
+  const zoom = useFlowZoom();
+
   return (
     <div class="pfchain-frame">
       {liveGhu ? (
@@ -68,25 +70,142 @@ export function LiveProjectFlow({ sessions }: Props) {
           </div>
           <div class="pfchain-meta">
             <WaveStats waves={waves} />
+            <ZoomControls zoom={zoom} />
           </div>
         </header>
       ) : (
         <header class="pfchain-head pfchain-head-idle">
           <div class="pfchain-kicker">IDLE</div>
           <div class="pfchain-title">No <code>/ghu</code> run yet — anchors show the conceptual flow.</div>
+          <ZoomControls zoom={zoom} />
         </header>
       )}
 
-      <ol class="pfchain" role="list">
-        {waves.map((wave, idx) => (
-          <li key={wave.id} class={`pfchain-slot${wave.parallel ? ' is-parallel' : ''}`}>
-            <WaveCell wave={wave} />
-            {idx < waves.length - 1 && (
-              <Connector fromState={slotState(wave)} />
-            )}
-          </li>
-        ))}
-      </ol>
+      <div class="pfchain-canvas" ref={zoom.containerRef}>
+        <ol
+          class="pfchain"
+          ref={zoom.chainRef as any}
+          role="list"
+          style={{ ['--pf-scale' as string]: String(zoom.scale) }}
+        >
+          {waves.map((wave, idx) => (
+            <li key={wave.id} class={`pfchain-slot${wave.parallel ? ' is-parallel' : ''}`}>
+              <WaveCell wave={wave} />
+              {idx < waves.length - 1 && (
+                <Connector fromState={slotState(wave)} />
+              )}
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Zoom / fit controller                                               */
+/* ------------------------------------------------------------------ */
+
+const MIN_SCALE = 0.4;
+const MAX_SCALE = 1.5;
+
+interface FlowZoom {
+  scale: number;
+  mode: 'fit' | 'manual';
+  containerRef: { current: HTMLDivElement | null };
+  chainRef: { current: HTMLOListElement | null };
+  fit: () => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  reset: () => void;
+}
+
+function useFlowZoom(): FlowZoom {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chainRef = useRef<HTMLOListElement | null>(null);
+  const [mode, setMode] = useState<'fit' | 'manual'>('fit');
+  const [scale, setScale] = useState(1);
+
+  // Observe container + content size; when in 'fit' mode, auto-scale so the
+  // chain fills the canvas without overflow. When in 'manual' mode, keep the
+  // user's chosen scale regardless.
+  useEffect(() => {
+    if (!containerRef.current || !chainRef.current) return;
+    const calcFit = () => {
+      const container = containerRef.current;
+      const chain = chainRef.current;
+      if (!container || !chain) return;
+      const containerW = container.clientWidth;
+      // Measure the un-scaled layout width by inverting the current scale.
+      const natural = chain.scrollWidth / (scale || 1);
+      if (natural <= 0 || containerW <= 0) return;
+      const next = Math.max(MIN_SCALE, Math.min(1, containerW / natural));
+      setScale(Number(next.toFixed(3)));
+    };
+    if (mode === 'fit') calcFit();
+    const ro = new ResizeObserver(() => {
+      if (mode === 'fit') calcFit();
+    });
+    ro.observe(containerRef.current);
+    ro.observe(chainRef.current);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
+
+  const step = (delta: number) => {
+    setMode('manual');
+    setScale((s) => {
+      const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Number((s + delta).toFixed(3))));
+      return next;
+    });
+  };
+
+  return {
+    scale,
+    mode,
+    containerRef,
+    chainRef,
+    fit: () => setMode('fit'),
+    zoomIn: () => step(0.1),
+    zoomOut: () => step(-0.1),
+    reset: () => { setMode('manual'); setScale(1); },
+  };
+}
+
+function ZoomControls({ zoom }: { zoom: FlowZoom }) {
+  const pct = Math.round(zoom.scale * 100);
+  return (
+    <div class="pfzoom" role="group" aria-label="Zoom flow">
+      <button
+        type="button"
+        class="pfzoom-btn"
+        onClick={zoom.zoomOut}
+        aria-label="Zoom out"
+        title="Zoom out"
+        disabled={zoom.scale <= MIN_SCALE + 0.001}
+      >−</button>
+      <button
+        type="button"
+        class={`pfzoom-mode${zoom.mode === 'fit' ? ' is-active' : ''}`}
+        onClick={zoom.fit}
+        title="Fit to width"
+      >FIT</button>
+      <div class="pfzoom-val" aria-live="polite">{pct}%</div>
+      <button
+        type="button"
+        class="pfzoom-btn"
+        onClick={zoom.reset}
+        aria-label="Reset to 100%"
+        title="Reset (100%)"
+      >1:1</button>
+      <button
+        type="button"
+        class="pfzoom-btn"
+        onClick={zoom.zoomIn}
+        aria-label="Zoom in"
+        title="Zoom in"
+        disabled={zoom.scale >= MAX_SCALE - 0.001}
+      >+</button>
     </div>
   );
 }
