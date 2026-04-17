@@ -241,8 +241,18 @@ Every agent MUST emit at least one `agent_progress` event mid-run so the viewer 
 ```
 
 ### file_changed (one per modified file)
+
+Required: `path`, `lines_added`, `lines_removed`, `agent`.
+
+Optional but **highly recommended** so the viewer can render a Write-tool-style log entry (path + action pill + preview):
+
+- `action`: `"create"` | `"modify"` | `"delete"` — what happened to the file.
+- `preview`: first 15 lines of the written content as a single string (include the actual file bytes; strip trailing whitespace). Skip on deletes.
+- `preview_line_count`: the integer number of lines in the `preview` string (for `+N more` rendering).
+- `lines_total`: the final file's total line count after the write.
+
 ```json
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"file_changed","payload":{"path":"pkg/foo/bar.go","lines_added":42,"lines_removed":7,"agent":"crafter"}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"agent","name":"crafter"},"type":"file_changed","payload":{"path":"pkg/foo/bar.go","action":"create","lines_added":58,"lines_removed":0,"lines_total":58,"preview_line_count":15,"preview":"package foo\n\nimport (\n\t\"fmt\"\n)\n\n...","agent":"crafter"}}
 ```
 
 ### finding_reported (from reviewer/sentinel/benchmarker)

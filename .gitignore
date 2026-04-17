@@ -49,3 +49,7 @@ Thumbs.db
 # Local dev sessions and artifacts produced by bender itself when self-hosting
 .bender/sessions/
 .bender/cache/
+
+# bender-ui runtime in this repo
+.bender/bender-ui.log
+.bender/bender-ui.pid

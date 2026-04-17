@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'preact/hooks';
 
 import { AgentFilter } from '../components/AgentFilter.tsx';
 import { EventRow } from '../components/EventRow.tsx';
-import { FindingsPanel } from '../components/FindingsPanel.tsx';
 import { Layout } from '../components/Layout.tsx';
 import { ProgressBar } from '../components/ProgressBar.tsx';
 import {
@@ -129,54 +128,45 @@ export function SessionTimeline({ params }: Props) {
         <ProgressBar events={events} frozen={!!frozen} />
       </div>
 
-      <div class="layout">
-        <div>
-          {state && (
-            <div class="card">
-              <h2>Session</h2>
-              <dl class="meta-grid">
-                <dt>Command</dt><dd>{state.command}</dd>
-                <dt>Status</dt><dd><span class={`status-pill ${state.status}`}>{state.status}</span></dd>
-                <dt>Started</dt><dd>{state.started_at}</dd>
-                {state.completed_at && <><dt>Completed</dt><dd>{state.completed_at}</dd></>}
-                {state.source_artifacts && state.source_artifacts.length > 0 && (
-                  <>
-                    <dt>Sources</dt>
-                    <dd>{state.source_artifacts.join(', ')}</dd>
-                  </>
-                )}
-                <dt>Files changed</dt><dd>{state.files_changed ?? 0}</dd>
-                <dt>Findings</dt><dd>{state.findings_count ?? 0}</dd>
-              </dl>
-            </div>
-          )}
-
-          <div class="card">
-            <h2>
-              Timeline ({visibleEvents.length}
-              {visibleEvents.length !== events.length && <> of {events.length}</>} events)
-            </h2>
-            <AgentFilter
-              agents={agents}
-              active={agentFilter}
-              counts={agentCounts}
-              onToggle={toggleAgent}
-              onClear={() => setAgentFilter(null)}
-            />
-            <div class="event-log">
-              {visibleEvents.length === 0 ? (
-                <div class="empty">
-                  {events.length === 0 ? 'Waiting for events…' : 'No events match the current filter.'}
-                </div>
-              ) : (
-                visibleEvents.map((ev, i) => <EventRow key={i} event={ev} />)
-              )}
-            </div>
-          </div>
+      {state && (
+        <div class="card">
+          <h2>Session</h2>
+          <dl class="meta-grid">
+            <dt>Command</dt><dd>{state.command}</dd>
+            <dt>Status</dt><dd><span class={`status-pill ${state.status}`}>{state.status}</span></dd>
+            <dt>Started</dt><dd>{state.started_at}</dd>
+            {state.completed_at && <><dt>Completed</dt><dd>{state.completed_at}</dd></>}
+            {state.source_artifacts && state.source_artifacts.length > 0 && (
+              <>
+                <dt>Sources</dt>
+                <dd>{state.source_artifacts.join(', ')}</dd>
+              </>
+            )}
+            <dt>Files changed</dt><dd>{state.files_changed ?? 0}</dd>
+          </dl>
         </div>
+      )}
 
-        <div>
-          <FindingsPanel events={events} />
+      <div class="card">
+        <h2>
+          Timeline ({visibleEvents.length}
+          {visibleEvents.length !== events.length && <> of {events.length}</>} events)
+        </h2>
+        <AgentFilter
+          agents={agents}
+          active={agentFilter}
+          counts={agentCounts}
+          onToggle={toggleAgent}
+          onClear={() => setAgentFilter(null)}
+        />
+        <div class="event-log">
+          {visibleEvents.length === 0 ? (
+            <div class="empty">
+              {events.length === 0 ? 'Waiting for events…' : 'No events match the current filter.'}
+            </div>
+          ) : (
+            visibleEvents.map((ev, i) => <EventRow key={i} event={ev} />)
+          )}
         </div>
       </div>
     </Layout>

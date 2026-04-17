@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/mayckol/ai-bender/internal/event"
 	"github.com/mayckol/ai-bender/internal/session"
@@ -69,6 +70,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case path == "/api/sessions":
+		if r.Method == http.MethodDelete {
+			h.deleteAllSessions(w, r)
+			return
+		}
 		h.listSessions(w, r)
 		return
 	case path == "/api/sessions/stream":
@@ -85,6 +90,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if m := sessionRoute.FindStringSubmatch(path); m != nil {
 		id := m[1]
 		suffix := m[2]
+
+		if r.Method == http.MethodDelete && suffix == "" {
+			h.deleteSession(w, r, id)
+			return
+		}
+
 		dir, err := session.ResolveSessionDir(h.root, id)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("session not found: %s", id), http.StatusNotFound)
@@ -202,6 +213,12 @@ func (h *handler) streamSession(w http.ResponseWriter, r *http.Request, _ string
 }
 
 // GET /api/sessions/stream (SSE, list-level)
+//
+// Re-emits a full snapshot every 3s instead of relying on fsnotify. The list
+// is tiny (a few KB at most) and polling catches both new session directories
+// AND status transitions inside existing ones — fsnotify's kqueue backend on
+// macOS misses the latter and is flaky for the former. Preact re-keys rows by
+// id, so unchanged rows don't re-render client-side.
 func (h *handler) streamSessions(w http.ResponseWriter, r *http.Request) {
 	sw, err := newSSEWriter(w)
 	if err != nil {
@@ -210,46 +227,64 @@ func (h *handler) streamSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	defer sw.close()
 
-	listings, err := session.List(h.root)
-	if err != nil {
-		_ = sw.writeRaw("error", err.Error())
-		return
+	emit := func() bool {
+		listings, err := session.List(h.root)
+		if err != nil {
+			_ = sw.writeRaw("error", err.Error())
+			return false
+		}
+		summaries := make([]sessionSummary, 0, len(listings))
+		for _, l := range listings {
+			summaries = append(summaries, buildSummary(l))
+		}
+		return sw.write("snapshot", summaries) == nil
 	}
-	summaries := make([]sessionSummary, 0, len(listings))
-	for _, l := range listings {
-		summaries = append(summaries, buildSummary(l))
-	}
-	if err := sw.write("snapshot", summaries); err != nil {
+
+	if !emit() {
 		return
 	}
 
 	ctx := r.Context()
-	stop := make(chan struct{})
-	rw, err := newRootWatcher(
-		session.SessionsRoot(h.root),
-		func(id string) {
-			if err := sw.write("session-added", map[string]string{"id": id}); err != nil {
-				select {
-				case <-stop:
-				default:
-					close(stop)
-				}
+	ticker := time.NewTicker(3 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !emit() {
+				return
 			}
-		},
-		func(err error) {
-			_ = sw.writeRaw("error", err.Error())
-		},
-	)
-	if err != nil {
-		_ = sw.writeRaw("error", err.Error())
+		}
+	}
+}
+
+// DELETE /api/sessions/:id
+func (h *handler) deleteSession(w http.ResponseWriter, _ *http.Request, id string) {
+	if err := session.Clear(h.root, id); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			http.Error(w, fmt.Sprintf("session not found: %s", id), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer rw.Stop()
+	w.WriteHeader(http.StatusNoContent)
+}
 
-	select {
-	case <-ctx.Done():
-	case <-stop:
+// DELETE /api/sessions?all=true
+func (h *handler) deleteAllSessions(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("all") != "true" {
+		http.Error(w, "add ?all=true to confirm a wipe of every session", http.StatusBadRequest)
+		return
 	}
+	removed, err := session.ClearAll(h.root)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"removed": removed})
 }
 
 // GET /api/sessions/:id/report

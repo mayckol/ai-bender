@@ -167,6 +167,90 @@ func TestStaticAssets(t *testing.T) {
 	}
 }
 
+func TestDeleteSession_RemovesSessionAndReturns204(t *testing.T) {
+	root := writeSessionFixture(t)
+	srv := newTestServer(t, root)
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/sessions/2026-04-16T22-04-07-f6g", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 204 {
+		t.Fatalf("want 204, got %d", resp.StatusCode)
+	}
+
+	list, err := http.Get(srv.URL + "/api/sessions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer list.Body.Close()
+	var out []map[string]any
+	if err := json.NewDecoder(list.Body).Decode(&out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("want 0 sessions after delete, got %d", len(out))
+	}
+}
+
+func TestDeleteSession_404WhenMissing(t *testing.T) {
+	root := writeSessionFixture(t)
+	srv := newTestServer(t, root)
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/sessions/does-not-exist", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 404 {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestDeleteAllSessions_RequiresAllQueryParam(t *testing.T) {
+	root := writeSessionFixture(t)
+	srv := newTestServer(t, root)
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/sessions", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != 400 {
+		t.Fatalf("want 400 without ?all=true, got %d", resp.StatusCode)
+	}
+	resp.Body.Close()
+}
+
+func TestDeleteAllSessions_ClearsEverythingWithAll(t *testing.T) {
+	root := writeSessionFixture(t)
+	srv := newTestServer(t, root)
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/sessions?all=true", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("want 200, got %d", resp.StatusCode)
+	}
+	var body map[string]int
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["removed"] != 1 {
+		t.Fatalf("want removed=1, got %d", body["removed"])
+	}
+}
+
 func TestReportPath_StripsSessionSuffix(t *testing.T) {
 	got := reportPath("/proj", "2026-04-16T22-04-07-f6g")
 	want := filepath.Join("/proj", ".bender", "artifacts", "ghu", "run-2026-04-16T22-04-07-report.md")
