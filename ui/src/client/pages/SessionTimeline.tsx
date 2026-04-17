@@ -4,6 +4,7 @@ import { AgentFilter } from '../components/AgentFilter.tsx';
 import { EventRow } from '../components/EventRow.tsx';
 import { FindingsPanel } from '../components/FindingsPanel.tsx';
 import { Layout } from '../components/Layout.tsx';
+import { ProgressBar } from '../components/ProgressBar.tsx';
 import {
   fetchSession,
   reportUrl,
@@ -122,6 +123,11 @@ export function SessionTimeline({ params }: Props) {
       {error && (
         <div class="card" style={{ color: 'var(--err)' }}>Error: {error}</div>
       )}
+
+      <div class="card">
+        <h2>Progress</h2>
+        <ProgressBar events={events} frozen={!!frozen} />
+      </div>
 
       <div class="layout">
         <div>

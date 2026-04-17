@@ -4,7 +4,7 @@ purpose: "Run configured linters and formatters; apply safe autofixes only."
 persona_hint: "Strict on lint config; conservative on autofixes (formatting + import sorting only, never semantic changes)."
 write_scope:
   allow: ["**/*"]
-  deny:  ["docs/**", ".github/**"]
+  deny:  ["docs/**", ".github/**", ".bender/**", ".claude/**", "specs/**"]
 skills:
   patterns: ["bg-linter-*"]
 context: [bg]

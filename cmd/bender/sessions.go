@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"text/tabwriter"
 
@@ -14,17 +16,19 @@ import (
 const (
 	ExitSessionNotFound = 50
 	ExitSessionInvalid  = 51
+	ExitClearNeedsTarget = 73
 )
 
 func newSessionsCmd(g *globalFlags) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sessions",
-		Short: "Inspect on-disk sessions written by Claude during slash-command runs",
+		Short: "Inspect and manage on-disk sessions written by Claude during slash-command runs",
 	}
 	cmd.AddCommand(newSessionsListCmd(g))
 	cmd.AddCommand(newSessionsShowCmd(g))
 	cmd.AddCommand(newSessionsExportCmd(g))
 	cmd.AddCommand(newSessionsValidateCmd(g))
+	cmd.AddCommand(newSessionsClearCmd(g))
 	return cmd
 }
 
@@ -118,6 +122,48 @@ func newSessionsValidateCmd(g *globalFlags) *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func newSessionsClearCmd(g *globalFlags) *cobra.Command {
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "clear [<session-id>]",
+		Short: "Remove a session (or every session with --all) and its scout cache; artifacts are preserved",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := resolveProjectRoot(g)
+			if err != nil {
+				return err
+			}
+			switch {
+			case all && len(args) > 0:
+				fmt.Fprintln(cmd.ErrOrStderr(), "sessions clear: pass either --all or <session-id>, not both")
+				os.Exit(ExitClearNeedsTarget)
+			case all:
+				removed, err := session.ClearAll(root)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "cleared %d session(s) under %s\n", removed, session.SessionsRoot(root))
+				return nil
+			case len(args) == 0:
+				fmt.Fprintln(cmd.ErrOrStderr(), "sessions clear: specify <session-id> or pass --all")
+				os.Exit(ExitClearNeedsTarget)
+			}
+			id := args[0]
+			if err := session.Clear(root, id); err != nil {
+				if errors.Is(err, fs.ErrNotExist) {
+					fmt.Fprintf(cmd.ErrOrStderr(), "sessions clear: %s not found\n", id)
+					os.Exit(ExitSessionNotFound)
+				}
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "cleared %s\n", id)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&all, "all", false, "remove every session directory and the whole scout cache (artifacts preserved)")
+	return cmd
 }
 
 func renderSessions(out io.Writer, listings []session.Listing) error {

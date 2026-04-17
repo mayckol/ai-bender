@@ -18,6 +18,7 @@ export type EventType =
   | 'stage_completed'
   | 'stage_failed'
   | 'orchestrator_decision'
+  | 'orchestrator_progress'
   | 'agent_started'
   | 'agent_completed'
   | 'agent_failed'

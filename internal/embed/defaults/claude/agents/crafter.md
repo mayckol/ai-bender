@@ -6,7 +6,7 @@ write_scope:
   allow: ["**/*.go", "**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx", "**/*.py", "**/*.rs", "**/*.java", "**/*.kt", "**/*.rb", "**/*.php", "**/*.swift", "**/*.cpp", "**/*.c", "**/*.h", "**/*_test.go", "**/*_spec.*", "**/*.spec.*", "**/*.test.*", "tests/**", "test/**"]
   deny:  ["docs/**", ".github/**", "scripts/**"]
 skills:
-  patterns: ["bg-crafter-*", "check-*"]
+  patterns: ["bg-crafter-*"]
   tags:
     none_of: [destructive, read-only]
 context: [bg]
