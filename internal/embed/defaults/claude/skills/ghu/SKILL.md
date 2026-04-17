@@ -36,21 +36,27 @@ $ARGUMENTS
 **Step 0 — Before doing anything else, parse `$ARGUMENTS` and branch:**
 
 1. If `$ARGUMENTS` contains `--inline` → skip to the "Workflow" section below and execute it directly in this conversation.
-2. Otherwise (default, or `--bg` explicitly) → delegate to a subagent:
+2. Otherwise (default, or `--bg` explicitly) → **seed the session, then delegate**:
+   - **Seed the session directory BEFORE dispatching**, so the viewer URL has something to show the moment the browser opens (otherwise Chrome races the subagent and lands on a blank/404 page):
+     1. Generate `<timestamp>` = UTC `YYYY-MM-DDTHH-MM-SS` and `<session-id>` = `<timestamp>-<rand3>`.
+     2. `mkdir -p .bender/sessions/<session-id>/`.
+     3. Write `state.json` with `{"schema_version":1,"session_id":"<session-id>","command":"/ghu","started_at":"<iso>","status":"running","source_artifacts":["<spec path>","<tasks path>"],"skills_invoked":[],"files_changed":0,"findings_count":0}`.
+     4. Append `session_started` to `events.jsonl` (one `printf` — same envelope as "Observability shape" below).
+     5. Append `stage_started` to `events.jsonl` (one `printf`).
    - Invoke the **Agent tool** exactly once with:
      - `subagent_type: general-purpose`
      - `run_in_background: true`
      - `description`: `"ghu background run"`
-     - `prompt`: a self-contained message that includes (a) the full body of this SKILL.md from the "Workflow" section onward, (b) the user's `$ARGUMENTS` (with `--bg` stripped), and (c) the absolute working directory.
+     - `prompt`: a self-contained message that includes (a) the full body of this SKILL.md **from the `## Actor discipline` section onward** (this is critical — `## Actor discipline`, `## Event emission discipline — STREAM, never batch`, `## Pre-Execution Checks`, `## Workflow`, and `## Observability shape` must ALL be in the subagent prompt; if you slice from `## Workflow` the subagent never sees the streaming rule and falls back to batch-at-end, leaving the viewer blank until completion), (b) the user's `$ARGUMENTS` (with `--bg` stripped), (c) the absolute working directory, AND (d) an explicit `SESSION_ID=<session-id>` line plus a note that the session directory, `state.json`, `session_started`, and `stage_started` have **already been written by the dispatcher** — the subagent must continue from `orchestrator_decision` (task_decomposition) onward and must NOT re-emit `session_started` / `stage_started` or recreate `state.json`. The subagent MUST obey the STREAM-never-batch rule: each of its own events is one `printf >> events.jsonl` call at the moment it happens, so the viewer sees updates live.
    - After launching, print to the user exactly:
-     - The new session ID (generated before launch).
+     - The seeded session ID.
      - The target report path (`.bender/artifacts/ghu/run-<timestamp>-report.md`).
      - The viewer URL: `http://localhost:4317/sessions/<session-id>` — start the viewer with `bender server` (detached by default; `bender server stop` to stop).
      - A note that execution is running in the background and they will be notified on completion.
-   - **Best-effort auto-open.** If the viewer is running (TCP probe of `127.0.0.1:4317` succeeds — use `nc -z localhost 4317` or equivalent), invoke the platform opener once and ignore failure: `open http://localhost:4317/sessions/<id>` on macOS, `xdg-open` on Linux, `powershell Start-Process` on Windows. If the probe fails, do not attempt to open — just print the URL plus a hint like `Run 'bender server' to launch the viewer.`.
+   - **Best-effort auto-open.** If the viewer is running (TCP probe of `127.0.0.1:4317` succeeds — use `nc -z localhost 4317` or equivalent), invoke the platform opener once and ignore failure: `open http://localhost:4317/sessions/<session-id>` on macOS, `xdg-open` on Linux, `powershell Start-Process` on Windows. Because the session directory was seeded above, the page lands on a live timeline (not a 404). If the probe fails, do not attempt to open — just print the URL plus a hint like `Run 'bender server' to launch the viewer.`.
    - **Exit the main turn.** Do NOT execute the Workflow section in the main conversation when delegating.
 
-The main conversation's sole responsibility in `--bg` mode is to dispatch and report the launch. All orchestration, file writes, and agent invocations happen inside the forked subagent.
+The main conversation's sole responsibility in `--bg` mode is to seed the session, dispatch, and report the launch. All remaining orchestration, file writes, and agent invocations happen inside the forked subagent.
 
 ## Actor discipline — WHO emits WHICH events
 
@@ -122,7 +128,10 @@ Run any `hooks.before_ghu`.
 
 5. **Honor `--abort-on-failure`** to halt on the first task failure (default: continue and mark blocked).
 
-6. **Create a session directory** under `.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with `decision_type: "task_decomposition"`). The decomposition payload MUST carry the task list AND the dependency edges extracted from the tasks file: `{"decision_type":"task_decomposition","tasks":["T001","T002",...],"dependencies":[{"task":"T002","depends_on":["T001"]},...]}`. Tasks with no incoming edges are the first wave; everything else must wait for its prerequisites.
+6. **Session directory + initial events.**
+   - **`--bg` mode**: the dispatcher (see "Dispatcher" section above) has already created `.bender/sessions/<SESSION_ID>/`, written `state.json`, and appended `session_started` + `stage_started`. Use the `SESSION_ID` passed in the subagent prompt; do NOT recreate the directory and do NOT re-emit those two events.
+   - **`--inline` mode**: create `.bender/sessions/<id>/` yourself, write `state.json`, and append `session_started` + `stage_started` before continuing.
+   - In **both** modes, append `orchestrator_decision` next (with `decision_type: "task_decomposition"`). The decomposition payload MUST carry the task list AND the dependency edges extracted from the tasks file: `{"decision_type":"task_decomposition","tasks":["T001","T002",...],"dependencies":[{"task":"T002","depends_on":["T001"]},...]}`. Tasks with no incoming edges are the first wave; everything else must wait for its prerequisites.
 
 7. **Walk the execution graph**, which depends on `tdd_mode`:
 

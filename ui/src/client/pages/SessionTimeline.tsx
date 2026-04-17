@@ -52,45 +52,77 @@ export function SessionTimeline({ params }: Props) {
     });
   }
 
+  const [pending, setPending] = useState(true);
+
   useEffect(() => {
     let mounted = true;
-    fetchSession(id)
-      .then((snap: SessionExport) => {
-        if (!mounted) return;
-        setState(snap.state);
-        setEvents(snap.events);
-      })
-      .catch((err) => { if (mounted) setError(String(err)); });
+    let stopSSE: (() => void) | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    const stop = subscribeSSE(`/api/sessions/${encodeURIComponent(id)}/stream`, {
-      onOpen: () => setConnected(true),
-      onError: () => setConnected(false),
-      handlers: {
-        snapshot: (ev) => {
-          try {
-            const snap = JSON.parse(ev.data) as SessionExport;
-            setState(snap.state);
-            setEvents(snap.events);
-          } catch (err) { setError(String(err)); }
+    function subscribe() {
+      stopSSE = subscribeSSE(`/api/sessions/${encodeURIComponent(id)}/stream`, {
+        onOpen: () => setConnected(true),
+        onError: () => setConnected(false),
+        handlers: {
+          snapshot: (ev) => {
+            try {
+              const snap = JSON.parse(ev.data) as SessionExport;
+              setState(snap.state);
+              setEvents(snap.events);
+            } catch (err) { setError(String(err)); }
+          },
+          event: (ev) => {
+            try {
+              const parsed = JSON.parse(ev.data) as BenderEvent;
+              setEvents((prev) => [...prev, parsed]);
+            } catch (err) { setError(String(err)); }
+          },
+          'state-patch': (ev) => {
+            try { setState(JSON.parse(ev.data) as SessionState); }
+            catch (err) { setError(String(err)); }
+          },
+          error: (ev) => {
+            try { setError((JSON.parse(ev.data) as { message: string }).message); }
+            catch { setError(ev.data); }
+          },
         },
-        event: (ev) => {
-          try {
-            const parsed = JSON.parse(ev.data) as BenderEvent;
-            setEvents((prev) => [...prev, parsed]);
-          } catch (err) { setError(String(err)); }
-        },
-        'state-patch': (ev) => {
-          try { setState(JSON.parse(ev.data) as SessionState); }
-          catch (err) { setError(String(err)); }
-        },
-        error: (ev) => {
-          try { setError((JSON.parse(ev.data) as { message: string }).message); }
-          catch { setError(ev.data); }
-        },
-      },
-    });
+      });
+    }
 
-    return () => { mounted = false; stop(); };
+    function load() {
+      if (!mounted) return;
+      fetchSession(id)
+        .then((snap: SessionExport) => {
+          if (!mounted) return;
+          setState(snap.state);
+          setEvents(snap.events);
+          setPending(false);
+          setError(null);
+          subscribe();
+        })
+        .catch((err) => {
+          if (!mounted) return;
+          const msg = String(err);
+          // Treat "session not found" as a pending session (race between
+          // Chrome opening and the dispatcher seeding the directory) and
+          // retry every 500ms for up to ~30s before surfacing it.
+          if (/not\s*found|404/i.test(msg)) {
+            setPending(true);
+            retryTimer = setTimeout(load, 500);
+            return;
+          }
+          setError(msg);
+          setPending(false);
+        });
+    }
+
+    load();
+
+    return () => {
+      mounted = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      if (stopSSE) stopSSE();
+    };
   }, [id]);
 
   const reportAvailable = useMemo(
@@ -121,6 +153,16 @@ export function SessionTimeline({ params }: Props) {
 
       {error && (
         <div class="card" style={{ color: 'var(--err)' }}>Error: {error}</div>
+      )}
+
+      {pending && !state && !error && (
+        <div class="card">
+          <h2>Session starting…</h2>
+          <p class="muted-small">
+            Waiting for <code>{id}</code> to appear under <code>.bender/sessions/</code>.
+            This page will switch to the live timeline the moment the first event lands.
+          </p>
+        </div>
       )}
 
       <div class="card">
