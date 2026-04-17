@@ -52,6 +52,7 @@ this binary itself does not invoke any LLM.`,
 	root.AddCommand(newDoctorCmd(g))
 	root.AddCommand(newSessionsCmd(g))
 	root.AddCommand(newServerCmd(g))
+	root.AddCommand(newApplyConfigCmd(g))
 	root.AddCommand(newSyncDefaultsCmd(g))
 	root.AddCommand(newUpdateCmd(g))
 	return root

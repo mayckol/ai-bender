@@ -1,13 +1,25 @@
 # Per-project bender settings. Created on `bender init`. Edit freely; `bender sync-defaults`
 # will not overwrite this file unless you pass --force.
 #
-# Per-agent overrides (apply after the agent's frontmatter is loaded):
+# The `agents` block declares additive overrides on agents that ship as embedded defaults
+# (crafter, tester, reviewer, sentinel, architect, scout, linter, surgeon, benchmarker, scribe).
+# Run `bender apply-config` after editing to bake changes into .claude/agents/*.md. Claude Code
+# reads the agent files, not this config — baking is how your overrides take effect.
 #
-# agents:
-#   crafter:
-#     skills:
-#       add: [project-specific-migration-check]
-#       remove: [check-data-model]
-#     write_scope:
-#       deny_add: ["internal/legacy/**"]
-agents: {}
+# Adding a brand-new agent (unique name) is a different workflow: drop a file at
+# .claude/agents/<name>.md and it will be picked up automatically; this file only composes
+# behavior on EXISTING agents.
+
+agents:
+  # Sample: extend the default crafter (leave `add` / `remove` empty or delete the whole block
+  # if you don't need overrides — `agents: {}` is valid).
+  crafter:
+    skills:
+      add: []                              # names appended to crafter's SkillSelector.Explicit
+      remove: []                           # names stripped from any selector list + pushed to Tags.NoneOf
+    write_scope:
+      allow_add: []                        # extra glob patterns the crafter may write
+      allow_remove: []                     # globs to strip from the default allow list
+      deny_add:                            # tighten: the crafter MUST NOT touch these paths
+        - "internal/legacy/**"
+      deny_remove: []                      # globs to strip from the default deny list

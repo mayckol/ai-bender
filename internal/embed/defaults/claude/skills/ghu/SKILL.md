@@ -52,6 +52,25 @@ $ARGUMENTS
 
 The main conversation's sole responsibility in `--bg` mode is to dispatch and report the launch. All orchestration, file writes, and agent invocations happen inside the forked subagent.
 
+## Actor discipline — WHO emits WHICH events
+
+This table is a rule, not a suggestion. Events that violate it break the viewer's agent threading and the `bender sessions validate` contract.
+
+| Event type(s) | `actor.kind` | `actor.name` | `payload.agent` | Notes |
+|---|---|---|---|---|
+| `session_started` | `user` | `claude-code` | absent | Emitted once by the orchestrator on session start. |
+| `stage_started`, `stage_completed`, `stage_failed`, `artifact_written` | `stage` | `ghu` | absent | Stage-owned lifecycle events. |
+| `orchestrator_decision`, `session_completed` | `orchestrator` | `core` | absent | Orchestrator-owned. When the decision targets a specific agent, set `payload.dispatched_agent` (and `payload.dispatched_agents` for parallel dispatch). |
+| `agent_started`, `agent_progress`, `agent_completed`, `agent_failed`, `agent_blocked` | `agent` | `<agent name>` | `<agent name>` | Worker-owned. |
+| `skill_invoked`, `skill_completed`, `skill_failed` | `agent` | `<agent name>` | `<agent name>` | Worker-owned; plus `skill`. |
+| `file_changed` | `agent` | `<agent name>` | `<agent name>` | The agent that wrote the file. |
+| `finding_reported` | `agent` | `<reporter>` (reviewer/sentinel/benchmarker/linter) | `<reporter>` | Whichever agent surfaced the finding. |
+
+Forbidden combinations:
+- `payload.agent` on orchestrator/stage/user events — WRONG. Use `dispatched_agent` on orchestrator decisions instead.
+- `actor.kind: "agent"` without a `payload.agent` matching `actor.name` — WRONG.
+- Orchestrator-emitted events with `actor.kind: "agent"` — WRONG.
+
 ## Pre-Execution Checks
 
 Run any `hooks.before_ghu`.
@@ -72,7 +91,7 @@ Run any `hooks.before_ghu`.
 
 4. **Honor `--abort-on-failure`** to halt on the first task failure (default: continue and mark blocked).
 
-5. **Create a session directory** under `.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with the task decomposition).
+5. **Create a session directory** under `.bender/sessions/<id>/`. Write `state.json` and append `session_started`, `stage_started`, `orchestrator_decision` (with `decision_type: "task_decomposition"`). The decomposition payload MUST carry the task list AND the dependency edges extracted from the tasks file: `{"decision_type":"task_decomposition","tasks":["T001","T002",...],"dependencies":[{"task":"T002","depends_on":["T001"]},...]}`. Tasks with no incoming edges are the first wave; everything else must wait for its prerequisites.
 
 6. **Walk the execution graph**, which depends on `tdd_mode`:
 

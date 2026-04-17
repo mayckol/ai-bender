@@ -35,13 +35,42 @@ export async function listSessions(projectRoot: string): Promise<SessionSummary[
       const state = await readState(dir);
       const events = await readEvents(dir);
       const duration_ms = computeDuration(state.started_at, events);
-      out.push({ id, state, duration_ms });
+      const { agents, skills } = summarizeEvents(events);
+      out.push({ id, state, duration_ms, agents, skills });
     } catch {
       // Skip malformed session dirs; they surface via `bender sessions validate`.
     }
   }
   out.sort((a, b) => a.id.localeCompare(b.id));
   return out;
+}
+
+const SKILL_EVENT_TYPES = new Set(['skill_invoked', 'skill_completed', 'skill_failed']);
+
+export function summarizeEvents(events: BenderEvent[]): { agents: string[]; skills: string[] } {
+  const agents = new Set<string>();
+  const skills = new Set<string>();
+  for (const ev of events) {
+    agents.add(responsibleAgentForSummary(ev));
+    if (SKILL_EVENT_TYPES.has(ev.type)) {
+      const skill = (ev.payload as Record<string, unknown> | undefined)?.skill;
+      if (typeof skill === 'string' && skill) skills.add(skill);
+    }
+  }
+  return {
+    agents: [...agents].sort(),
+    skills: [...skills].sort(),
+  };
+}
+
+// Duplicated from client/lib/agents.ts so the server module has no client deps.
+// Keep in sync with `ResponsibleAgent` in internal/event/agent.go.
+function responsibleAgentForSummary(ev: BenderEvent): string {
+  const p = (ev.payload ?? {}) as Record<string, unknown>;
+  if (typeof p.agent === 'string' && p.agent) return p.agent;
+  if (typeof p.dispatched_agent === 'string' && p.dispatched_agent) return p.dispatched_agent;
+  if (ev.actor.kind === 'agent' && ev.actor.name) return ev.actor.name;
+  return 'main';
 }
 
 export async function readState(dir: string): Promise<SessionState> {

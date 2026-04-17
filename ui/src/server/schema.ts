@@ -69,6 +69,8 @@ export interface SessionSummary {
   id: string;
   state: SessionState;
   duration_ms: number;
+  agents: string[];
+  skills: string[];
 }
 
 export interface SessionExport {

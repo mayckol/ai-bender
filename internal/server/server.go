@@ -114,13 +114,24 @@ func (h *handler) listSessions(w http.ResponseWriter, _ *http.Request) {
 	}
 	summaries := make([]sessionSummary, 0, len(listings))
 	for _, l := range listings {
-		summaries = append(summaries, sessionSummary{
-			ID:         l.ID,
-			State:      l.State,
-			DurationMS: l.Duration.Milliseconds(),
-		})
+		summaries = append(summaries, buildSummary(l))
 	}
 	writeJSON(w, http.StatusOK, summaries)
+}
+
+func buildSummary(l session.Listing) sessionSummary {
+	sum := sessionSummary{
+		ID:         l.ID,
+		State:      l.State,
+		DurationMS: l.Duration.Milliseconds(),
+		Agents:     []string{},
+		Skills:     []string{},
+	}
+	if events, err := session.SummarizeEvents(l.Path); err == nil {
+		sum.Agents = events.Agents
+		sum.Skills = events.Skills
+	}
+	return sum
 }
 
 // GET /api/sessions/:id
@@ -206,11 +217,7 @@ func (h *handler) streamSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	summaries := make([]sessionSummary, 0, len(listings))
 	for _, l := range listings {
-		summaries = append(summaries, sessionSummary{
-			ID:         l.ID,
-			State:      l.State,
-			DurationMS: l.Duration.Milliseconds(),
-		})
+		summaries = append(summaries, buildSummary(l))
 	}
 	if err := sw.write("snapshot", summaries); err != nil {
 		return
@@ -277,6 +284,8 @@ type sessionSummary struct {
 	ID         string        `json:"id"`
 	State      session.State `json:"state"`
 	DurationMS int64         `json:"duration_ms"`
+	Agents     []string      `json:"agents"`
+	Skills     []string      `json:"skills"`
 }
 
 type sessionSnapshot struct {

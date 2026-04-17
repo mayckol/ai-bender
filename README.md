@@ -387,6 +387,68 @@ artifacts/
 └── constitution.md         # heuristic project profile; AI-required sections marked pending
 ```
 
+## Customising agents via `.bender/config.yaml`
+
+`bender init` drops a `.bender/config.yaml` into every project. It declares additive overrides on the **existing** embedded agents — extending or trimming each one's skill selector and write scope without forking `.claude/agents/*.md`.
+
+```yaml
+agents:
+  crafter:
+    skills:
+      add:    [my-migration-check]         # appended to crafter's explicit skills
+      remove: [check-data-model]           # stripped + pushed to tags.none_of
+    write_scope:
+      allow_add:    []                     # extra globs crafter may write
+      allow_remove: []
+      deny_add:     ["internal/legacy/**"] # tighten: crafter must not touch these
+      deny_remove:  []
+```
+
+Claude Code reads the agent files on disk (`.claude/agents/*.md`), **not** this YAML. To make the overrides effective, bake them into the agent files:
+
+```bash
+bender apply-config                 # rewrite matching .claude/agents/*.md in place
+bender apply-config --dry-run       # preview — show what would change per file
+```
+
+The rewrite is **idempotent**: running twice with the same config produces zero diff on the second pass. Exit codes:
+
+| Exit | Meaning |
+|---|---|
+| 0 | Success |
+| 70 | A config.yaml agent has no file under `.claude/agents/` (run `bender sync-defaults` first) |
+| 71 | `.bender/config.yaml` failed to parse |
+
+### Adding a brand-new agent (different workflow)
+
+`config.yaml` only composes behavior on **existing** agents. To add a new agent:
+
+1. Drop a file at `.claude/agents/<your-name>.md` with the standard agent frontmatter.
+2. Optionally drop its skills at `.claude/skills/<skill>/SKILL.md`.
+3. `bender doctor` validates the new catalog; the registry loader picks up the user file automatically (same-name user files fully replace embedded defaults, new-name files are added).
+
+Example agent file:
+
+```yaml
+---
+name: security-auditor
+purpose: "Deep review for authN/authZ regressions"
+persona_hint: "paranoid senior security engineer"
+write_scope:
+  allow: []                          # read-only: writes findings, not code
+  deny:  ["**"]
+skills:
+  explicit: [bg-sentinel-deep-auth]  # bind to skills you also added
+  patterns: ["bg-sentinel-*"]
+context: [bg]
+invoked_by: [ghu, implement]
+---
+
+# security-auditor
+
+Agent body / persona prose goes here.
+```
+
 ## Extending without modifying core
 
 Drop a new skill into `.claude/skills/<name>/SKILL.md`. Every agent whose selector matches it will pick it up on the next `bender doctor` and the next slash-command run. No registration, no rebuild.
