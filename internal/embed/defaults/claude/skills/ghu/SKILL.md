@@ -71,6 +71,16 @@ Forbidden combinations:
 - `actor.kind: "agent"` without a `payload.agent` matching `actor.name` — WRONG.
 - Orchestrator-emitted events with `actor.kind: "agent"` — WRONG.
 
+## Event emission discipline — STREAM, never batch
+
+**Every** event in "Observability shape" MUST be appended to `.bender/sessions/<id>/events.jsonl` **the moment its trigger happens** — **one Bash tool call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into one notification and the user sees `Waiting for events…` for the full run. This applies to both the orchestrator (main or `--bg` subagent) AND every worker subagent it dispatches — each worker emits its own events inside its own context using the same mechanism.
+
+```bash
+printf '%s\n' '<single-line JSON>' >> .bender/sessions/<id>/events.jsonl
+```
+
+Ordering: intent events (`skill_invoked`, `orchestrator_decision`, `agent_started`) append BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `agent_completed`, `stage_completed`, `session_completed`) append AFTER. `orchestrator_progress` + `agent_progress` append as their percent changes — not once at the end. Never buffer events and flush them with one `Write`.
+
 ## Pre-Execution Checks
 
 Run any `hooks.before_ghu`.

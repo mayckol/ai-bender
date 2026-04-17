@@ -22,6 +22,18 @@ Capture a user's request as a structured artifact. Classify the issue type, reco
 $ARGUMENTS
 ```
 
+## Event emission discipline — STREAM, never batch
+
+**Every** event listed in the "Observability shape" section below MUST be appended to `.bender/sessions/<id>/events.jsonl` the moment its trigger happens — **one Bash tool call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching every event into one end-of-run write collapses the whole timeline into one notification and the user sees `Waiting for events…` for the full run.
+
+How to append a single event:
+
+```bash
+printf '%s\n' '<single-line JSON>' >> .bender/sessions/<id>/events.jsonl
+```
+
+Ordering rule: intent events (`skill_invoked`, `orchestrator_decision`, `agent_started`) append BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `stage_completed`, `session_completed`) append AFTER. Never buffer events in memory and flush them with one `Write`.
+
 ## Pre-Execution Checks
 
 1. Check if `.specify/extensions.yml` exists with a `hooks.before_cry` entry. Honor `enabled` and `optional`. For mandatory hooks, run them first.

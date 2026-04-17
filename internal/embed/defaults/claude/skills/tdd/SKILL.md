@@ -23,6 +23,16 @@ Mirror the source tree under `.bender/artifacts/plan/tests/`. For each source fi
 $ARGUMENTS
 ```
 
+## Event emission discipline — STREAM, never batch
+
+**Every** event MUST be appended to `.bender/sessions/<id>/events.jsonl` the moment its trigger happens — **one Bash tool call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into a single notification and the user sees `Waiting for events…` for the full run.
+
+```bash
+printf '%s\n' '<single-line JSON>' >> .bender/sessions/<id>/events.jsonl
+```
+
+Intent events (`skill_invoked`) append BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `stage_completed`, `session_completed`) append AFTER. Never buffer events and flush them with one `Write`.
+
 ## Pre-Execution Checks
 
 Run any `hooks.before_tdd`.
