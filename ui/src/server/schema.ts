@@ -76,9 +76,15 @@ export interface SessionSummary {
   duration_ms: number;
   agents: string[];
   skills: string[];
+  // Server-derived status: a draft session whose paired `<cmd> confirm` run
+  // has completed is effectively `completed` even though its own state.json
+  // ended at `awaiting_confirm`. Falls back to state.status when no confirm
+  // was run. The UI renders this instead of state.status for the pill.
+  effective_status?: SessionStatus;
 }
 
 export interface SessionExport {
   state: SessionState;
   events: BenderEvent[];
+  effective_status?: SessionStatus;
 }
