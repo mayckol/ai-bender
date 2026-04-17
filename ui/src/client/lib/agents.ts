@@ -1,23 +1,31 @@
 import type { BenderEvent } from './api.ts';
 
 /**
- * Given an event, determine which agent is responsible for it so the UI can
- * thread events by agent regardless of whether the actor is the agent itself
- * (agent_* events) or the orchestrator dispatching work to an agent
- * (orchestrator_decision with dispatched_agent).
+ * Canonical agent name for an event. Matches the Go helper in
+ * internal/event/agent.go so the server list and the client timeline always
+ * agree on who owns an event.
  *
- * Preference order:
- *  1. payload.agent                — explicitly declared (required on most v1 events)
- *  2. payload.dispatched_agent     — orchestrator_decision targeting an agent
- *  3. actor.name when actor.kind is 'agent' — agent speaking for itself
- *  4. 'orchestrator' / 'stage'     — fallback to actor kind so timelines still render
+ * Mental model:
+ * - Inline stages (/cry, /plan, /tdd, /bender-bootstrap, /ghu --inline) all
+ *   happen in the "main" conversation — there are no worker subagents, so we
+ *   attribute everything to `main` instead of the raw actor name.
+ * - /ghu --bg delegates to specific workers (crafter, tester, reviewer, …).
+ *   Those events carry the worker name in payload.agent or actor.name.
+ *
+ * Precedence:
+ *  1. payload.agent              — explicit on agent-produced events
+ *  2. payload.dispatched_agent   — orchestrator_decision targeting an agent
+ *  3. actor.name if actor.kind === 'agent'
+ *  4. 'main' for everything else (orchestrator, stage, user, sink)
  */
+export const MAIN_AGENT = 'main';
+
 export function responsibleAgent(ev: BenderEvent): string {
   const p = (ev.payload ?? {}) as Record<string, unknown>;
   if (typeof p.agent === 'string' && p.agent) return p.agent;
   if (typeof p.dispatched_agent === 'string' && p.dispatched_agent) return p.dispatched_agent;
   if (ev.actor.kind === 'agent' && ev.actor.name) return ev.actor.name;
-  return ev.actor.name || ev.actor.kind;
+  return MAIN_AGENT;
 }
 
 /**

@@ -34,9 +34,14 @@ describe('responsibleAgent', () => {
     expect(responsibleAgent(e)).toBe('reviewer');
   });
 
-  test('falls back to actor name for non-agent actors', () => {
+  test('maps orchestrator actors to "main" (inline stages like /cry, /plan)', () => {
     const e = ev({ payload: {}, actor: { kind: 'orchestrator', name: 'ghu' } });
-    expect(responsibleAgent(e)).toBe('ghu');
+    expect(responsibleAgent(e)).toBe('main');
+  });
+
+  test('maps stage and user actors to "main" too', () => {
+    expect(responsibleAgent(ev({ actor: { kind: 'stage', name: 'plan' } }))).toBe('main');
+    expect(responsibleAgent(ev({ actor: { kind: 'user', name: 'claude-code' } }))).toBe('main');
   });
 });
 
@@ -52,13 +57,13 @@ describe('agentColor', () => {
 });
 
 describe('distinctAgents', () => {
-  test('returns the sorted set of responsible agents', () => {
+  test('returns the sorted set of responsible agents (orchestrator -> main)', () => {
     const events = [
       ev({ payload: { agent: 'crafter' } }),
       ev({ payload: { agent: 'tester' } }),
       ev({ payload: { agent: 'crafter' } }),
       ev({ actor: { kind: 'orchestrator', name: 'ghu' }, payload: {} }),
     ];
-    expect(distinctAgents(events)).toEqual(['crafter', 'ghu', 'tester']);
+    expect(distinctAgents(events)).toEqual(['crafter', 'main', 'tester']);
   });
 });

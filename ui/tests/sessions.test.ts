@@ -11,6 +11,7 @@ import {
   reportPath,
   sessionDir,
   sessionsRoot,
+  summarizeEvents,
 } from '../src/server/sessions.ts';
 
 async function fixture() {
@@ -70,13 +71,29 @@ describe('sessions module', () => {
     expect(list).toEqual([]);
   });
 
-  test('listSessions parses state + duration from on-disk fixtures', async () => {
+  test('listSessions parses state + duration + agents + skills from on-disk fixtures', async () => {
     const f = await fixture();
     const list = await listSessions(f.root);
     expect(list).toHaveLength(1);
     expect(list[0].id).toBe(f.id);
     expect(list[0].state.command).toBe('/ghu');
     expect(list[0].duration_ms).toBe(21000);
+    // Fixture only has session_started + session_completed with orchestrator
+    // actors, so both collapse to the "main" attribution.
+    expect(list[0].agents).toEqual(['main']);
+    expect(list[0].skills).toEqual([]);
+  });
+
+  test('summarizeEvents threads agents and skills by responsibility', () => {
+    const events = [
+      { schema_version: 1, session_id: 's1', timestamp: 't', actor: { kind: 'orchestrator', name: 'ghu' }, type: 'session_started', payload: { command: '/ghu' } },
+      { schema_version: 1, session_id: 's1', timestamp: 't', actor: { kind: 'agent', name: 'crafter' }, type: 'skill_invoked', payload: { skill: 'bg-crafter-implement', agent: 'crafter' } },
+      { schema_version: 1, session_id: 's1', timestamp: 't', actor: { kind: 'agent', name: 'tester' }, type: 'skill_invoked', payload: { skill: 'bg-tester-write-and-run', agent: 'tester' } },
+      { schema_version: 1, session_id: 's1', timestamp: 't', actor: { kind: 'orchestrator', name: 'ghu' }, type: 'orchestrator_decision', payload: { decision_type: 'agent_assignment', dispatched_agent: 'crafter' } },
+    ] as any;
+    const sum = summarizeEvents(events);
+    expect(sum.agents).toEqual(['crafter', 'main', 'tester']);
+    expect(sum.skills).toEqual(['bg-crafter-implement', 'bg-tester-write-and-run']);
   });
 
   test('exportSession returns state + events parity with on-disk files', async () => {

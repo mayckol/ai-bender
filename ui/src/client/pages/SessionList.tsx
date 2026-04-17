@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'preact/hooks';
 
 import { Layout } from '../components/Layout.tsx';
+import { agentColor } from '../lib/agents.ts';
 import { fetchSessions, type SessionSummary } from '../lib/api.ts';
 import { subscribeSSE } from '../lib/sse.ts';
 
@@ -50,6 +51,8 @@ export function SessionList() {
                 <th>ID</th>
                 <th>Command</th>
                 <th>Status</th>
+                <th>Agents</th>
+                <th>Skills</th>
                 <th>Started</th>
                 <th>Duration</th>
                 <th>Files</th>
@@ -62,6 +65,8 @@ export function SessionList() {
                   <td><a href={`/sessions/${s.id}`}>{s.id}</a></td>
                   <td>{s.state.command}</td>
                   <td><span class={`status-pill ${s.state.status}`}>{s.state.status}</span></td>
+                  <td><AgentCell agents={s.agents ?? []} /></td>
+                  <td><SkillCell skills={s.skills ?? []} /></td>
                   <td>{s.state.started_at}</td>
                   <td>{fmtDuration(s.duration_ms)}</td>
                   <td>{s.state.files_changed ?? 0}</td>
@@ -73,6 +78,38 @@ export function SessionList() {
         )}
       </div>
     </Layout>
+  );
+}
+
+function AgentCell({ agents }: { agents: string[] }) {
+  if (agents.length === 0) return <span class="muted-small">—</span>;
+  const visible = agents.slice(0, 4);
+  const remainder = agents.length - visible.length;
+  return (
+    <span class="agent-cell">
+      {visible.map((a) => {
+        const color = agentColor(a);
+        return (
+          <span
+            key={a}
+            class="agent-mini"
+            style={{ background: `${color}22`, color, borderColor: `${color}55` }}
+          >
+            {a}
+          </span>
+        );
+      })}
+      {remainder > 0 && <span class="agent-mini muted">+{remainder}</span>}
+    </span>
+  );
+}
+
+function SkillCell({ skills }: { skills: string[] }) {
+  if (skills.length === 0) return <span class="muted-small">—</span>;
+  return (
+    <span class="skill-cell" title={skills.join('\n')}>
+      {skills.length} {skills.length === 1 ? 'skill' : 'skills'}
+    </span>
   );
 }
 
