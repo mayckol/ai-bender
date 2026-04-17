@@ -35,8 +35,15 @@ groups:
     halt_on_failure: false
 
   review-sweep:
-    description: "Post-implementation review fan-out — reviewer, sentinel, benchmarker, and scribe run in parallel on the change set. /ghu walks this group after the tdd-cycle or plain-cycle group completes."
+    description: "Read-only review fan-out — reviewer, sentinel, and benchmarker run in parallel on the change set. Scribe is intentionally excluded because its inline-comment edits touch the same source files the review trio is reading, and parallel read/write on identical paths is a race. /ghu walks this group after the tdd-cycle or plain-cycle group completes."
     select:
-      patterns: ["bg-reviewer-*", "bg-sentinel-*", "bg-benchmarker-*", "bg-scribe-*"]
+      patterns: ["bg-reviewer-*", "bg-sentinel-*", "bg-benchmarker-*"]
     ordered: false
+    halt_on_failure: false
+
+  docs-sweep:
+    description: "Docs + inline-comments pass. Scribe updates `**/*.md`, README/CHANGELOG, and opens source comment blocks. Runs AFTER review-sweep (serially) so its source edits don't race reviewer/sentinel/benchmarker reads."
+    select:
+      patterns: ["bg-scribe-*"]
+    ordered: true
     halt_on_failure: false

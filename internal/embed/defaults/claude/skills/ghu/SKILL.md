@@ -77,6 +77,55 @@ Forbidden combinations:
 - `actor.kind: "agent"` without a `payload.agent` matching `actor.name` — WRONG.
 - Orchestrator-emitted events with `actor.kind: "agent"` — WRONG.
 
+## Parallel dispatch protocol — MUST OBEY
+
+Groups in `.claude/groups.yaml` declared with `ordered: false` (currently
+`plain-cycle`, `review-sweep`, `pre-implementation-checks`) MUST be
+dispatched as a **single concurrent batch**, never one-per-turn. Claude's
+`Agent` tool runs invocations in parallel only when multiple tool-use
+blocks appear in the SAME assistant message. Dispatching one agent, waiting
+for it, then dispatching the next silently serialises the whole group —
+which defeats its purpose and is the single biggest correctness-and-speed
+bug this section exists to prevent.
+
+### Rule for `ordered: false` groups
+
+1. Resolve the eligible agent set (apply `--skip` filters first).
+2. Emit **one** `orchestrator_decision` event with
+   `decision_type: "parallel_dispatch"`, `group: "<group-id>"`, and
+   `dispatched_agents: ["<name>", ...]`.
+3. In the **same assistant message**, issue one `Agent` tool call per
+   dispatched agent — no prose between them, no intermediate tool calls,
+   no awaiting one before the next.
+4. Each dispatched agent streams its own events into the shared
+   `events.jsonl`. Interleaved lines from different agents are expected
+   and correct; never buffer to "sort them" at the end.
+5. After every dispatched agent has returned (success, failure, blocked),
+   resume walking the graph at the next node.
+
+### Rule for `ordered: true` groups
+
+Walk in declaration order, one agent per turn. `halt_on_failure: true`
+means stop the entire run on the first failure. `halt_on_failure: false`
+means emit `agent_failed` / `agent_blocked` and continue with the next
+entry.
+
+### Forbidden patterns
+
+- One Agent call per assistant message when the group is `ordered:
+  false`. This is the silent-serialisation bug.
+- Awaiting agent A's result before starting agent B when both belong to
+  the same `ordered: false` group.
+- Skipping the `parallel_dispatch` `orchestrator_decision` event. The
+  viewer uses it to lay out the fan-out in the flow diagram.
+- Parallel-dispatching agents whose `write_scope.allow` globs overlap on
+  the same file path. If two dispatched agents both claim the right to
+  write the same path, fall back to sequential dispatch and emit
+  `orchestrator_decision` with `decision_type: "parallel_dispatch_aborted"`,
+  `reason: "write_scope_conflict"`, `conflicting_path: "<path>"`. Step 9
+  (serialise concurrent same-path writes) is the runtime enforcement of
+  this rule.
+
 ## Event emission discipline — STREAM, never batch
 
 **Every** event in "Observability shape" MUST be appended to `.bender/sessions/<id>/events.jsonl` **the moment its trigger happens** — **one Bash tool call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into one notification and the user sees `Waiting for events…` for the full run. This applies to both the orchestrator (main or `--bg` subagent) AND every worker subagent it dispatches — each worker emits its own events inside its own context using the same mechanism.
@@ -114,10 +163,11 @@ Run any `hooks.before_ghu`.
    | `reviewer` | `review` | the reviewer agent's critique + PR summary |
    | `sentinel` | `security`, `sec` | the sentinel agent's security pass |
    | `benchmarker` | `perf`, `bench` | the benchmarker agent's perf pass |
-   | `scribe` | `docs` | the scribe agent's doc + inline-comment updates |
+   | `scribe` | `docs` | the scribe agent's doc + inline-comment updates (also skips the `docs-sweep` group) |
    | `surgeon` | `refactor` | the surgeon agent's refactor pass |
    | `architect` | — | the architect validation pass during /ghu |
-   | `review-sweep` | `reviews` | the whole `review-sweep` group (reviewer, sentinel, benchmarker, scribe) |
+   | `review-sweep` | `reviews` | the `review-sweep` group (reviewer, sentinel, benchmarker — the read-only trio) |
+   | `docs-sweep` | `docs-pass` | the `docs-sweep` group (scribe only) |
 
    Rules:
    - **`crafter` is not skippable.** `/ghu` that skips crafter produces nothing. Reject with `error: cannot skip crafter — /ghu has nothing to do without it.`
@@ -135,19 +185,23 @@ Run any `hooks.before_ghu`.
 
 7. **Walk the execution graph**, which depends on `tdd_mode`:
 
-   **Plain mode** (no approved scaffolds) — walks the `plain-cycle` + `review-sweep` groups from `.claude/groups.yaml`:
+   **Plain mode** (no approved scaffolds) — walks the `plain-cycle` + `review-sweep` + `docs-sweep` groups from `.claude/groups.yaml`. Follow the **Parallel dispatch protocol** above for every `ordered: false` group (one `orchestrator_decision` with `decision_type: "parallel_dispatch"`, then ALL agents in a single assistant message):
    ```
    scout (map codebase) → architect (validate approach)
    ↓
    surgeon (if refactor needed)
    ↓
-   plain-cycle group (parallel, halt_on_failure=false):
+   plain-cycle group (ordered: false — PARALLEL DISPATCH):
      crafter → bg-crafter-implement   ∥   tester → bg-tester-write-and-run
    ↓
    linter (autofix + report)
    ↓
-   review-sweep group (parallel, halt_on_failure=false):
-     reviewer ∥ sentinel ∥ benchmarker ∥ scribe
+   review-sweep group (ordered: false — PARALLEL DISPATCH, read-only trio):
+     reviewer ∥ sentinel ∥ benchmarker
+   ↓
+   docs-sweep group (ordered: true — SERIAL, after the review trio):
+     scribe (inline comments + docs; kept serial so source-edits don't
+     race the review trio's file reads)
    ↓
    final report
    ```
@@ -180,12 +234,18 @@ Run any `hooks.before_ghu`.
    ↓
    linter (autofix + report)
    ↓
-   review-sweep group (parallel, halt_on_failure=false):
-     reviewer ∥ sentinel ∥ benchmarker ∥ scribe
+   review-sweep group (ordered: false — PARALLEL DISPATCH, read-only trio):
+     reviewer ∥ sentinel ∥ benchmarker
+   ↓
+   docs-sweep group (ordered: true — SERIAL):
+     scribe (inline comments + docs; kept serial so source-edits don't
+     race the review trio's file reads)
    ↓
    final report (flag the TDD mode in the summary header, cite the
    tdd_scaffolded and tdd_green findings)
    ```
+
+   Parallel-dispatch both `review-sweep` groups per the Parallel dispatch protocol above. `docs-sweep` is `ordered: true`, so scribe runs alone in its own turn.
 
    The `tdd-cycle` group is **ordered** so tester scaffolds first, crafter implements second, tester runs third. Switch the order at your own peril — the commented-out asserts only mean anything if crafter sees them before touching production code. The test-runner command comes from the constitution's Tests section, falling back to marker-file autodetect (see `bg-tester-run`).
 
@@ -227,16 +287,18 @@ Same envelope as `/cry`, `/plan`, `/tdd`. Stage is **`ghu`** for every event.
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"stage","name":"ghu"},"type":"stage_started","payload":{"stage":"ghu","inputs":[".bender/artifacts/specs/<slug>-<ts>.md",".bender/artifacts/plan/tasks-<ts>.md"]}}
 ```
 
-### orchestrator_decision (emit per task_decomposition, agent_assignment, graph_node_transition, parallel_dispatch, execution_mode, skip)
+### orchestrator_decision (emit per task_decomposition, agent_assignment, graph_node_transition, parallel_dispatch, parallel_dispatch_aborted, execution_mode, skip)
 ```json
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"task_decomposition","tasks":["T001","T002","..."],"dependencies":[{"task":"T002","depends_on":["T001"]}]}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"agent_assignment","dispatched_agent":"crafter","task_ids":["T004"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"parallel_dispatch","group":"review-sweep","dispatched_agents":["reviewer","sentinel","benchmarker"]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"parallel_dispatch_aborted","group":"plain-cycle","reason":"write_scope_conflict","conflicting_path":"src/pkg/foo.go"}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"graph_node_transition","from_node":"scout","to_node":"architect"}}
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_decision","payload":{"decision_type":"skip","target":"linter","alias":"lint","reason":"user_requested"}}
 ```
 
 ### orchestrator_progress (emit after every graph node transition)
-Whole-session progress as an integer percentage `[0, 100]`. The orchestrator MUST emit one per completed major node so the viewer can render a session-level progress bar. `current_step` is the human-readable node name (e.g., `"scout"`, `"tdd-cycle: bg-tester-scaffold"`, `"review-sweep"`). Baseline points: scout=10, architect=20, crafter/tester cycle mid=50, linter=70, review-sweep=90, final report=100.
+Whole-session progress as an integer percentage `[0, 100]`. The orchestrator MUST emit one per completed major node so the viewer can render a session-level progress bar. `current_step` is the human-readable node name (e.g., `"scout"`, `"tdd-cycle: bg-tester-scaffold"`, `"review-sweep"`). Baseline points: scout=10, architect=20, crafter/tester cycle mid=50, linter=70, review-sweep=85, docs-sweep=92, final report=100.
 ```json
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"orchestrator_progress","payload":{"percent":50,"current_step":"tdd-cycle: bg-crafter-implement","completed_nodes":["scout","architect","bg-tester-scaffold"],"remaining_nodes":["bg-tester-run","linter","review-sweep","report"]}}
 ```
