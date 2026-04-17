@@ -17,16 +17,19 @@ const SchemaVersion = 1
 
 // State mirrors the on-disk state.json snapshot per `contracts/session.md`.
 //
-// CompletedAt is optional and set only once the session reaches a terminal status
-// (completed | failed). When present, `bender sessions list` uses it (rather than
-// the last event timestamp) as the authoritative end time for the duration column.
+// CompletedAt is set once the session reaches a terminal-ish status
+// (awaiting_confirm | completed | failed). `awaiting_confirm` means the draft
+// produced its artifacts but the stage is still pending the user's `/<stage>
+// confirm` approval run — its events.jsonl is frozen. When CompletedAt is
+// present, `bender sessions list` uses it (rather than the last event
+// timestamp) as the authoritative end time for the duration column.
 type State struct {
 	SchemaVersion   int       `json:"schema_version"`
 	SessionID       string    `json:"session_id"`
 	Command         string    `json:"command"`
 	StartedAt       time.Time `json:"started_at"`
 	CompletedAt     time.Time `json:"completed_at,omitzero"`
-	Status          string    `json:"status"` // running | completed | failed
+	Status          string    `json:"status"` // running | awaiting_confirm | completed | failed
 	SourceArtifacts []string  `json:"source_artifacts,omitempty"`
 	SkillsInvoked   []string  `json:"skills_invoked,omitempty"`
 	FilesChanged    int       `json:"files_changed,omitempty"`

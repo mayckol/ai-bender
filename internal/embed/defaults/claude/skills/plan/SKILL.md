@@ -116,8 +116,11 @@ Ordering rule:
    - Reject cyclic dependencies before writing.
    - Append `artifact_written`, then `skill_completed`.
 
-8. **Finalize**: rewrite `state.json` with `status: completed` and
-   `completed_at`. Append `stage_completed`. Append `session_completed`.
+8. **Finalize**: rewrite `state.json` with `status: awaiting_confirm` and
+   `completed_at`. Append `stage_completed`. Append `session_completed` with
+   `payload.status: "awaiting_confirm"`. The draft plan set is not truly
+   complete until the user runs `/plan confirm`; only the confirm run flips
+   the status to `completed`.
 
 9. **Print** every artifact path produced and "next: `/plan confirm`".
 
@@ -153,8 +156,12 @@ Same envelope as `/cry`. Stage is **`plan`** for every stage/skill/artifact even
 
 ### session_completed
 ```json
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"completed","duration_ms":<int>,"agents_summary":[]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"awaiting_confirm","duration_ms":<int>,"agents_summary":[]}}
 ```
+
+A draft `/plan` run emits `status: "awaiting_confirm"` — the stage only reaches
+`completed` once the user runs `/plan confirm` (the confirm run emits `status:
+"completed"`).
 
 ### state.json (overwrite in place)
 ```json
@@ -164,13 +171,16 @@ Same envelope as `/cry`. Stage is **`plan`** for every stage/skill/artifact even
   "command": "/plan",
   "started_at": "<iso>",
   "completed_at": "<iso, once terminal>",
-  "status": "running|completed|failed",
+  "status": "running|awaiting_confirm|completed|failed",
   "source_artifacts": [".bender/artifacts/cry/<slug>-<ts>.md"],
   "skills_invoked": ["spec_draft","data_model","api_contract","risk_assessment","tasks_decompose"],
   "files_changed": <int>,
   "findings_count": 0
 }
 ```
+
+A draft `/plan` run finalises with `status: awaiting_confirm`. The subsequent
+`/plan confirm` session finalises with `status: completed`.
 
 ### Forbidden shortcuts
 - `ts` instead of `timestamp`; `event` instead of `type`; payload fields inlined at the top level — all WRONG.
@@ -185,7 +195,10 @@ A fresh session with its own `session_id`:
 2. `stage_started` (payload.stage = `plan`, payload.inputs = the 5 draft paths)
 3. 5 × `artifact_written` (one per plan-set file, new sha256 since `status: draft` → `approved`)
 4. `stage_completed`
-5. `session_completed`
+5. `session_completed` with `payload.status: "completed"`
+
+state.json for the `/plan confirm` session finalises with `status:
+"completed"`. The original `/plan` draft session stays as `awaiting_confirm`.
 
 ## Post-Execution
 

@@ -97,10 +97,10 @@ func Validate(sessionDir string) ([]Violation, error) {
 			Message: fmt.Sprintf("state.findings_count=%d but no finding_reported events emitted", state.FindingsCount),
 		})
 	}
-	if state.Status == "completed" && !sawCompletion {
+	if (state.Status == "completed" || state.Status == "awaiting_confirm") && !sawCompletion {
 		out = append(out, Violation{
 			Where:   "events.jsonl",
-			Message: "state.status=completed but no session_completed event emitted",
+			Message: fmt.Sprintf("state.status=%s but no session_completed event emitted", state.Status),
 		})
 	}
 
@@ -124,11 +124,11 @@ func validateState(s *State) []string {
 		msgs = append(msgs, "started_at is required")
 	}
 	switch s.Status {
-	case "running", "completed", "failed":
+	case "running", "awaiting_confirm", "completed", "failed":
 	default:
-		msgs = append(msgs, fmt.Sprintf("status=%q (want running|completed|failed)", s.Status))
+		msgs = append(msgs, fmt.Sprintf("status=%q (want running|awaiting_confirm|completed|failed)", s.Status))
 	}
-	if (s.Status == "completed" || s.Status == "failed") && s.CompletedAt.IsZero() {
+	if (s.Status == "awaiting_confirm" || s.Status == "completed" || s.Status == "failed") && s.CompletedAt.IsZero() {
 		msgs = append(msgs, fmt.Sprintf("completed_at is required when status=%q", s.Status))
 	}
 	return msgs

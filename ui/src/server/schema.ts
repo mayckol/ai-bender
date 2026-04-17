@@ -47,7 +47,11 @@ export interface BenderEvent {
   payload?: Record<string, unknown>;
 }
 
-export type SessionStatus = 'running' | 'completed' | 'failed';
+export type SessionStatus =
+  | 'running'
+  | 'awaiting_confirm'
+  | 'completed'
+  | 'failed';
 
 export interface SessionState {
   schema_version?: number;

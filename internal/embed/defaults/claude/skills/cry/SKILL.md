@@ -98,9 +98,12 @@ Ordering rule: intent events (`skill_invoked`, `orchestrator_decision`, `agent_s
 5. **Emit events** as you proceed — use the exact shapes in "Observability shape" below.
    Emit in this order: `session_started` → `stage_started` → one `skill_invoked` + matching
    `skill_completed` per sub-step (`classification`, `predecessor_lookup`, `drafting`) →
-   `artifact_written` → `stage_completed` → `session_completed`.
+   `artifact_written` → `stage_completed` → `session_completed` with
+   `payload.status: "awaiting_confirm"`.
 
-6. **Update `state.json`** per the "Observability shape" section below.
+6. **Update `state.json`** per the "Observability shape" section below. For a
+   draft `/cry` run the terminal status is `awaiting_confirm`, not `completed`
+   — the stage is only truly complete once the user runs `/cry confirm`.
 
 7. **Print** the artifact path, the chosen issue type, and "next: `/cry confirm` to approve, or re-run `/cry` with more context".
 
@@ -154,8 +157,12 @@ Valid event types for `/cry` (emit in order). Fill `timestamp` at emit time.
 
 ### session_completed
 ```json
-{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"completed","duration_ms":<int>,"agents_summary":[]}}
+{"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"awaiting_confirm","duration_ms":<int>,"agents_summary":[]}}
 ```
+
+The draft run's terminal status is **`awaiting_confirm`** — the stage is not
+truly complete until the user runs `/cry confirm`. Only the confirm run emits
+`status: completed`.
 
 ### state.json (overwrite in place)
 ```json
@@ -165,13 +172,16 @@ Valid event types for `/cry` (emit in order). Fill `timestamp` at emit time.
   "command": "/cry",
   "started_at": "<iso>",
   "completed_at": "<iso, once terminal>",
-  "status": "running|completed|failed",
+  "status": "running|awaiting_confirm|completed|failed",
   "source_artifacts": [],
   "skills_invoked": ["classification","predecessor_lookup","drafting"],
   "files_changed": 1,
   "findings_count": 0
 }
 ```
+
+A draft `/cry` run finalises with `status: awaiting_confirm`. The subsequent
+`/cry confirm` session is the one that finalises with `status: completed`.
 
 ### Forbidden shortcuts
 - `ts` instead of `timestamp` — WRONG.
@@ -194,9 +204,12 @@ Confirm is a fresh session with its own `session_id` (directory), NOT a resumpti
 2. `stage_started` (payload.stage = `cry`)
 3. `artifact_written` (payload.path is the approved artifact, new sha256)
 4. `stage_completed`
-5. `session_completed`
+5. `session_completed` with `payload.status: "completed"`
 
-Plus a state.json with `command: /cry confirm`, terminal `completed_at`, `source_artifacts: [<the draft path>]`.
+Plus a state.json with `command: /cry confirm`, `status: "completed"`, terminal
+`completed_at`, `source_artifacts: [<the draft path>]`. The `/cry confirm`
+session is the one that is truly `completed` — the original `/cry` draft stays
+as `awaiting_confirm` forever.
 
 ## Notes
 

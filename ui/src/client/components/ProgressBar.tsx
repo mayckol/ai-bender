@@ -4,7 +4,7 @@ import { agentColor } from '../lib/agents.ts';
 interface Props { events: BenderEvent[]; frozen: boolean; }
 
 /**
- * Session-level progress bar fed by `orchestrator_progress` events plus a
+ * Stage-level progress bar fed by `orchestrator_progress` events plus a
  * compact per-agent progress strip fed by `agent_progress` events. Renders
  * the latest percent seen for each emitter.
  */
@@ -39,7 +39,7 @@ export function ProgressBar({ events, frozen }: Props) {
     <div class="progress-block">
       <div class="progress-row session">
         <div class="progress-head">
-          <span class="progress-label">Session</span>
+          <span class="progress-label">Stage</span>
           <span class="progress-step">{sessionStep || (sessionPct === 0 ? 'waiting…' : '')}</span>
           <span class="progress-pct">{sessionPct}%</span>
         </div>

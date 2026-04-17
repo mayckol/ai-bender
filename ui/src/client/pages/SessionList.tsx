@@ -14,7 +14,7 @@ export function SessionList() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null); // id being deleted, or 'all'
+  const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -37,7 +37,7 @@ export function SessionList() {
   }, []);
 
   async function onDelete(id: string) {
-    if (!window.confirm(`Remove session ${id}?\n\nThe events.jsonl, state.json, and this session's scout cache will be deleted. Artifacts under .bender/artifacts/ are preserved.`)) return;
+    if (!window.confirm(`Remove stage ${id}?\n\nThe events.jsonl, state.json, and this stage's scout cache will be deleted. Artifacts under .bender/artifacts/ are preserved.`)) return;
     setBusy(id);
     try {
       await deleteSession(id);
@@ -51,7 +51,7 @@ export function SessionList() {
 
   async function onClearAll() {
     if (sessions.length === 0) return;
-    if (!window.confirm(`Remove ALL ${sessions.length} session(s)?\n\nEvery session directory and the whole scout cache will be deleted. Artifacts under .bender/artifacts/ are preserved. This cannot be undone.`)) return;
+    if (!window.confirm(`Remove ALL ${sessions.length} stage(s)?\n\nEvery stage directory and the whole scout cache will be deleted. Artifacts under .bender/artifacts/ are preserved. This cannot be undone.`)) return;
     setBusy('all');
     try {
       await deleteAllSessions();
@@ -65,7 +65,7 @@ export function SessionList() {
 
   return (
     <Layout
-      title="bender — sessions"
+      title="bender — stages"
       right={
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           {sessions.length > 0 && (
@@ -74,7 +74,7 @@ export function SessionList() {
               class="btn danger"
               disabled={busy !== null}
               onClick={onClearAll}
-              title="Delete every session directory + the scout cache"
+              title="Delete every stage directory + the scout cache"
             >
               {busy === 'all' ? 'Clearing…' : `Clear all (${sessions.length})`}
             </button>
@@ -86,7 +86,7 @@ export function SessionList() {
       {error && <div class="card" style={{ color: 'var(--err)' }}>Error: {error}</div>}
       <div class="card" style={{ padding: 0, overflow: 'hidden' }}>
         {sessions.length === 0 ? (
-          <div class="empty">No sessions yet. Run a slash command in this project.</div>
+          <div class="empty">No stages yet. Run a slash command in this project.</div>
         ) : (
           <table class="sessions">
             <thead>
@@ -107,7 +107,7 @@ export function SessionList() {
                 <tr key={s.id}>
                   <td><a href={`/sessions/${s.id}`}>{s.id}</a></td>
                   <td>{s.state.command}</td>
-                  <td><span class={`status-pill ${s.state.status}`}>{s.state.status}</span></td>
+                  <td><StatusPill status={s.state.status} /></td>
                   <td><AgentCell agents={s.agents ?? []} /></td>
                   <td><SkillCell skills={s.skills ?? []} /></td>
                   <td>{s.state.started_at}</td>
@@ -133,6 +133,11 @@ export function SessionList() {
       </div>
     </Layout>
   );
+}
+
+function StatusPill({ status }: { status: string }) {
+  const label = status === 'awaiting_confirm' ? 'awaiting confirm' : status;
+  return <span class={`status-pill ${status}`}>{label}</span>;
 }
 
 function AgentCell({ agents }: { agents: string[] }) {
