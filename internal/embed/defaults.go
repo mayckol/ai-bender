@@ -1,7 +1,7 @@
 // Package embed exposes the embedded `defaults/` tree as a fs.FS.
 //
-// The materializer in internal/workspace walks this tree, mirroring it into the project's `.claude/`
-// (skills, agents, groups.yaml) and `.bender/` (config.yaml, from config.yaml.tmpl).
+// The materializer in internal/workspace walks this tree, mirroring it into the
+// project's `.claude/` (skills, agents, groups.yaml).
 package embed
 
 import (

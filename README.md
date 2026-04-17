@@ -387,45 +387,26 @@ artifacts/
 └── constitution.md         # heuristic project profile; AI-required sections marked pending
 ```
 
-## Customising agents via `.bender/config.yaml`
+## Customising agents and skills
 
-`bender init` drops a `.bender/config.yaml` into every project. It declares additive overrides on the **existing** embedded agents — extending or trimming each one's skill selector and write scope without forking `.claude/agents/*.md`.
+Claude Code reads `.claude/agents/*.md` and `.claude/skills/*/SKILL.md` directly. There is no indirection layer — to change which skills an agent uses, edit the agent file; to add a new agent, drop a new agent file. The registry loader in `internal/agent` walks the embedded defaults first and then `.claude/`, so a same-name user file fully replaces the embedded default and a new-name file is added.
 
-```yaml
-agents:
-  crafter:
-    skills:
-      add:    [my-migration-check]         # appended to crafter's explicit skills
-      remove: [check-data-model]           # stripped + pushed to tags.none_of
-    write_scope:
-      allow_add:    []                     # extra globs crafter may write
-      allow_remove: []
-      deny_add:     ["internal/legacy/**"] # tighten: crafter must not touch these
-      deny_remove:  []
-```
-
-Claude Code reads the agent files on disk (`.claude/agents/*.md`), **not** this YAML. To make the overrides effective, bake them into the agent files:
+### Change an existing agent's skill binding
 
 ```bash
-bender apply-config                 # rewrite matching .claude/agents/*.md in place
-bender apply-config --dry-run       # preview — show what would change per file
+# .claude/agents/crafter.md (already on disk after bender init)
+#   skills:
+#     patterns: ["bg-crafter-*"]
+#     tags: { none_of: [destructive, read-only] }
 ```
 
-The rewrite is **idempotent**: running twice with the same config produces zero diff on the second pass. Exit codes:
+Edit the `skills` or `write_scope` blocks directly. `bender doctor` validates the result. That's it — no regeneration step.
 
-| Exit | Meaning |
-|---|---|
-| 0 | Success |
-| 70 | A config.yaml agent has no file under `.claude/agents/` (run `bender sync-defaults` first) |
-| 71 | `.bender/config.yaml` failed to parse |
-
-### Adding a brand-new agent (different workflow)
-
-`config.yaml` only composes behavior on **existing** agents. To add a new agent:
+### Add a brand-new agent
 
 1. Drop a file at `.claude/agents/<your-name>.md` with the standard agent frontmatter.
 2. Optionally drop its skills at `.claude/skills/<skill>/SKILL.md`.
-3. `bender doctor` validates the new catalog; the registry loader picks up the user file automatically (same-name user files fully replace embedded defaults, new-name files are added).
+3. `bender doctor` validates the new catalog.
 
 Example agent file:
 

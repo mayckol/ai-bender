@@ -14,3 +14,29 @@ groups:
       patterns: ["bg-sentinel-*"]
     ordered: true
     halt_on_failure: false
+
+  tdd-cycle:
+    description: "TDD mode — Scaffold → Implement → Verify. Tester first (writes commented-out test stubs from the approved /tdd scaffolds), crafter second (implements and activates the assertions), tester third (runs the suite; must be green). /ghu walks this group when .bender/artifacts/plan/tests/ has approved scaffolds."
+    select:
+      explicit:
+        - bg-tester-scaffold
+        - bg-crafter-implement
+        - bg-tester-run
+    ordered: true
+    halt_on_failure: true
+
+  plain-cycle:
+    description: "Plain mode — crafter implements and tester authors+runs its own tests in parallel. /ghu walks this group when no /tdd scaffolds are approved."
+    select:
+      explicit:
+        - bg-crafter-implement
+        - bg-tester-write-and-run
+    ordered: false
+    halt_on_failure: false
+
+  review-sweep:
+    description: "Post-implementation review fan-out — reviewer, sentinel, benchmarker, and scribe run in parallel on the change set. /ghu walks this group after the tdd-cycle or plain-cycle group completes."
+    select:
+      patterns: ["bg-reviewer-*", "bg-sentinel-*", "bg-benchmarker-*", "bg-scribe-*"]
+    ordered: false
+    halt_on_failure: false

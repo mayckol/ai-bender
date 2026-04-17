@@ -111,7 +111,6 @@ func TestInit_OnEmptyProject(t *testing.T) {
 		t.Fatalf("init: %v\n%s", err, out)
 	}
 	mustExist(t, root, ".claude/groups.yaml")
-	mustExist(t, root, ".bender/config.yaml")
 	mustExist(t, root, ".bender/artifacts/constitution.md")
 
 	body := mustRead(t, filepath.Join(root, ".bender/artifacts", "constitution.md"))

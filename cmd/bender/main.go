@@ -13,7 +13,6 @@ import (
 // globalFlags holds the values bound to the global persistent flags.
 type globalFlags struct {
 	project string
-	config  string
 	noColor bool
 	quiet   bool
 	verbose bool
@@ -40,7 +39,6 @@ this binary itself does not invoke any LLM.`,
 		SilenceErrors: false,
 	}
 	root.PersistentFlags().StringVar(&g.project, "project", "", "registered project name to operate on")
-	root.PersistentFlags().StringVar(&g.config, "config", "", "path to project config file (defaults to <project>/.bender/config.yaml)")
 	root.PersistentFlags().BoolVar(&g.noColor, "no-color", false, "disable color output")
 	root.PersistentFlags().BoolVar(&g.quiet, "quiet", false, "suppress informational logs")
 	root.PersistentFlags().BoolVar(&g.verbose, "verbose", false, "print loader and resolver decisions to stderr")
@@ -52,7 +50,6 @@ this binary itself does not invoke any LLM.`,
 	root.AddCommand(newDoctorCmd(g))
 	root.AddCommand(newSessionsCmd(g))
 	root.AddCommand(newServerCmd(g))
-	root.AddCommand(newApplyConfigCmd(g))
 	root.AddCommand(newSyncDefaultsCmd(g))
 	root.AddCommand(newUpdateCmd(g))
 	return root
