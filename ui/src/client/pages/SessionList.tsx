@@ -2,13 +2,19 @@ import { useEffect, useState } from 'preact/hooks';
 
 import { Layout } from '../components/Layout.tsx';
 import { agentColor } from '../lib/agents.ts';
-import { fetchSessions, type SessionSummary } from '../lib/api.ts';
+import {
+  deleteAllSessions,
+  deleteSession,
+  fetchSessions,
+  type SessionSummary,
+} from '../lib/api.ts';
 import { subscribeSSE } from '../lib/sse.ts';
 
 export function SessionList() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null); // id being deleted, or 'all'
 
   useEffect(() => {
     let mounted = true;
@@ -24,21 +30,58 @@ export function SessionList() {
           try { setSessions(JSON.parse(ev.data) as SessionSummary[]); }
           catch (err) { setError(String(err)); }
         },
-        'session-added': () => {
-          // Cheap re-fetch on new-session notifications rather than an
-          // incremental patch — the list is tiny.
-          fetchSessions().then(setSessions).catch((err) => setError(String(err)));
-        },
       },
     });
 
     return () => { mounted = false; stop(); };
   }, []);
 
+  async function onDelete(id: string) {
+    if (!window.confirm(`Remove session ${id}?\n\nThe events.jsonl, state.json, and this session's scout cache will be deleted. Artifacts under .bender/artifacts/ are preserved.`)) return;
+    setBusy(id);
+    try {
+      await deleteSession(id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onClearAll() {
+    if (sessions.length === 0) return;
+    if (!window.confirm(`Remove ALL ${sessions.length} session(s)?\n\nEvery session directory and the whole scout cache will be deleted. Artifacts under .bender/artifacts/ are preserved. This cannot be undone.`)) return;
+    setBusy('all');
+    try {
+      await deleteAllSessions();
+      setSessions([]);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <Layout
       title="bender — sessions"
-      right={<LiveIndicator connected={connected} />}
+      right={
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          {sessions.length > 0 && (
+            <button
+              type="button"
+              class="btn danger"
+              disabled={busy !== null}
+              onClick={onClearAll}
+              title="Delete every session directory + the scout cache"
+            >
+              {busy === 'all' ? 'Clearing…' : `Clear all (${sessions.length})`}
+            </button>
+          )}
+          <LiveIndicator connected={connected} />
+        </div>
+      }
     >
       {error && <div class="card" style={{ color: 'var(--err)' }}>Error: {error}</div>}
       <div class="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -56,7 +99,7 @@ export function SessionList() {
                 <th>Started</th>
                 <th>Duration</th>
                 <th>Files</th>
-                <th>Findings</th>
+                <th aria-label="actions" />
               </tr>
             </thead>
             <tbody>
@@ -70,7 +113,18 @@ export function SessionList() {
                   <td>{s.state.started_at}</td>
                   <td>{fmtDuration(s.duration_ms)}</td>
                   <td>{s.state.files_changed ?? 0}</td>
-                  <td>{s.state.findings_count ?? 0}</td>
+                  <td class="row-actions">
+                    <button
+                      type="button"
+                      class="row-delete"
+                      disabled={busy !== null}
+                      onClick={() => onDelete(s.id)}
+                      title={`Remove ${s.id}`}
+                      aria-label={`Remove ${s.id}`}
+                    >
+                      {busy === s.id ? '…' : '×'}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
