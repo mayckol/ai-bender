@@ -56,7 +56,9 @@ func List(projectRoot string) ([]Listing, error) {
 			Duration: duration,
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	// Newest first: ids are timestamp-prefixed, so reverse lexical order matches the
+	// "what did I just run?" reading order used by the UI's stage list.
+	sort.Slice(out, func(i, j int) bool { return out[i].ID > out[j].ID })
 	return out, nil
 }
 
