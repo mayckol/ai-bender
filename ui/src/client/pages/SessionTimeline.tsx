@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
 import { AgentFilter } from '../components/AgentFilter.tsx';
 import { EventRow } from '../components/EventRow.tsx';
 import { Layout } from '../components/Layout.tsx';
-import { PipelineFlow } from '../components/PipelineFlow.tsx';
+import { SessionAgentFlow } from '../components/LiveProjectFlow.tsx';
 import { ProgressBar } from '../components/ProgressBar.tsx';
 import { SegmentedToggle } from '../components/SegmentedToggle.tsx';
-import { SubStageFlow } from '../components/SubStageFlow.tsx';
+import { SessionAgentGraph } from '../components/SessionAgentGraph.tsx';
 import {
   fetchSession,
   reportUrl,
@@ -15,16 +15,38 @@ import {
   type SessionState,
 } from '../lib/api.ts';
 import { distinctAgents, responsibleAgent } from '../lib/agents.ts';
-import {
-  extractSkillSteps,
-  isConfirmRun,
-  stageForCommand,
-} from '../lib/pipeline.ts';
 import { subscribeSSE } from '../lib/sse.ts';
+
+/**
+ * Idempotency key for a single event. Two events with identical keys are
+ * treated as duplicates and silently dropped at ingest. Intentionally
+ * derived from fields whose combination uniquely identifies a real-world
+ * emission: timestamp + type + actor name + any inline agent/skill hints.
+ */
+function eventKey(ev: BenderEvent): string {
+  const p = (ev.payload ?? {}) as Record<string, unknown>;
+  const agent = typeof p.agent === 'string' ? p.agent : '';
+  const skill = typeof p.skill === 'string' ? p.skill : '';
+  const decision = typeof p.decision_type === 'string' ? p.decision_type : '';
+  const dispatched = Array.isArray(p.dispatched_agents) ? (p.dispatched_agents as unknown[]).join(',') : '';
+  return `${ev.timestamp}|${ev.type}|${ev.actor?.kind ?? ''}|${ev.actor?.name ?? ''}|${agent}|${skill}|${decision}|${dispatched}`;
+}
+
+function dedupEvents(list: BenderEvent[]): { events: BenderEvent[]; seen: Set<string> } {
+  const seen = new Set<string>();
+  const out: BenderEvent[] = [];
+  for (const ev of list) {
+    const k = eventKey(ev);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(ev);
+  }
+  return { events: out, seen };
+}
 
 interface Props { params: { id: string }; }
 
-type TimelineView = 'logs' | 'flow';
+type TimelineView = 'flow' | 'graph' | 'logs';
 
 export function SessionTimeline({ params }: Props) {
   const id = params.id;
@@ -33,6 +55,10 @@ export function SessionTimeline({ params }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [agentFilter, setAgentFilter] = useState<Set<string> | null>(null);
+  // Idempotency — set of eventKey() hashes already ingested. Survives a
+  // snapshot reset so streaming events arriving after the initial load
+  // still dedupe against the snapshot.
+  const eventSeenRef = useRef<Set<string>>(new Set());
   const [view, setView] = useState<TimelineView>('flow');
   const [effectiveStatus, setEffectiveStatus] = useState<string | null>(null);
 
@@ -56,13 +82,6 @@ export function SessionTimeline({ params }: Props) {
     if (agentFilter === null || agentFilter.size === 0) return events;
     return events.filter((ev) => agentFilter.has(responsibleAgent(ev)));
   }, [events, agentFilter]);
-
-  const currentStage = useMemo(() => stageForCommand(state?.command), [state?.command]);
-  const confirmRun = useMemo(() => isConfirmRun(state?.command), [state?.command]);
-  const skillSteps = useMemo(
-    () => extractSkillSteps(events, currentStage),
-    [events, currentStage],
-  );
 
   function toggleAgent(a: string) {
     setAgentFilter((prev) => {
@@ -91,13 +110,18 @@ export function SessionTimeline({ params }: Props) {
             try {
               const snap = JSON.parse(ev.data) as SessionExport;
               setState(snap.state);
-              setEvents(snap.events);
+              const { events: deduped, seen } = dedupEvents(snap.events);
+              eventSeenRef.current = seen;
+              setEvents(deduped);
               if (snap.effective_status) setEffectiveStatus(snap.effective_status);
             } catch (err) { setError(String(err)); }
           },
           event: (ev) => {
             try {
               const parsed = JSON.parse(ev.data) as BenderEvent;
+              const key = eventKey(parsed);
+              if (eventSeenRef.current.has(key)) return;
+              eventSeenRef.current.add(key);
               setEvents((prev) => [...prev, parsed]);
             } catch (err) { setError(String(err)); }
           },
@@ -119,7 +143,9 @@ export function SessionTimeline({ params }: Props) {
         .then((snap: SessionExport) => {
           if (!mounted) return;
           setState(snap.state);
-          setEvents(snap.events);
+          const { events: deduped, seen } = dedupEvents(snap.events);
+          eventSeenRef.current = seen;
+          setEvents(deduped);
           if (snap.effective_status) setEffectiveStatus(snap.effective_status);
           setPending(false);
           setError(null);
@@ -196,24 +222,12 @@ export function SessionTimeline({ params }: Props) {
         <ProgressBar events={events} frozen={!!frozen} status={state?.status} />
       </section>
 
-      <section class="card card-pipeline">
-        <header class="card-frame-head">
-          <span class="card-frame-kicker">002</span>
-          <h2>Pipeline</h2>
-          <span class="card-frame-rule" />
-        </header>
-        <PipelineFlow
-          currentStage={currentStage}
-          sessionStatus={state?.status}
-          isConfirm={confirmRun}
-        />
-      </section>
 
       {state && (
         <section class="card">
           <header class="card-frame-head">
-            <span class="card-frame-kicker">003</span>
-            <h2>Stage manifest</h2>
+            <span class="card-frame-kicker">002</span>
+            <h2>Manifest</h2>
             <span class="card-frame-rule" />
           </header>
           <dl class="meta-grid">
@@ -239,13 +253,13 @@ export function SessionTimeline({ params }: Props) {
 
       <section class="card card-timeline">
         <header class="card-frame-head">
-          <span class="card-frame-kicker">004</span>
+          <span class="card-frame-kicker">003</span>
           <h2>
-            {view === 'flow' ? 'Stage flow' : 'Stage logs'}
+            {view === 'flow' ? 'Stage flow' : view === 'graph' ? 'Stage graph' : 'Stage logs'}
             <span class="card-frame-count">
-              {view === 'flow'
-                ? ` · ${skillSteps.length} step${skillSteps.length === 1 ? '' : 's'}`
-                : ` · ${visibleEvents.length}${visibleEvents.length !== events.length ? ` of ${events.length}` : ''} event${events.length === 1 ? '' : 's'}`}
+              {view === 'logs'
+                ? ` · ${visibleEvents.length}${visibleEvents.length !== events.length ? ` of ${events.length}` : ''} event${events.length === 1 ? '' : 's'}`
+                : ''}
             </span>
           </h2>
           <span class="card-frame-rule" />
@@ -254,13 +268,14 @@ export function SessionTimeline({ params }: Props) {
             value={view}
             onChange={setView}
             options={[
-              { value: 'flow', label: 'Flow', glyph: '◈' },
-              { value: 'logs', label: 'Logs', glyph: '≡' },
+              { value: 'flow',  label: 'Flow',  glyph: '◈' },
+              { value: 'graph', label: 'Graph', glyph: '▤' },
+              { value: 'logs',  label: 'Logs',  glyph: '≡' },
             ]}
           />
         </header>
 
-        {view === 'logs' ? (
+        {view === 'logs' && (
           <>
             <AgentFilter
               agents={agents}
@@ -279,13 +294,9 @@ export function SessionTimeline({ params }: Props) {
               )}
             </div>
           </>
-        ) : (
-          <SubStageFlow
-            stage={currentStage}
-            steps={skillSteps}
-            sessionStatus={state?.status}
-          />
         )}
+        {view === 'flow'  && <SessionAgentFlow  events={events} state={state} />}
+        {view === 'graph' && <SessionAgentGraph events={events} state={state} />}
       </section>
     </Layout>
   );

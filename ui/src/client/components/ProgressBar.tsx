@@ -46,7 +46,7 @@ export function ProgressBar({ events, frozen, status }: Props) {
   return (
     <div class="progress-block">
       <div class="progress-dashboard">
-        <div class="dial-frame">
+        <div class={`dial-frame dial-${state}`}>
           <span class="dial-tick dial-tick-tl" aria-hidden="true" />
           <span class="dial-tick dial-tick-tr" aria-hidden="true" />
           <span class="dial-tick dial-tick-bl" aria-hidden="true" />
@@ -97,20 +97,14 @@ export function ProgressBar({ events, frozen, status }: Props) {
 }
 
 function RadialDial({ percent, state }: { percent: number; state: string }) {
-  const size = 168;
-  const stroke = 6;
+  const size = 140;
+  const stroke = 3;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - percent / 100);
   return (
     <div class="dial">
       <svg class="dial-svg" viewBox={`0 0 ${size} ${size}`} width={size} height={size} aria-hidden="true">
-        <defs>
-          <linearGradient id="dialFill" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="var(--signal)" />
-            <stop offset="100%" stop-color="var(--phosphor)" />
-          </linearGradient>
-        </defs>
         <circle
           class="dial-track"
           cx={size / 2}
@@ -125,7 +119,6 @@ function RadialDial({ percent, state }: { percent: number; state: string }) {
           cy={size / 2}
           r={radius}
           fill="none"
-          stroke="url(#dialFill)"
           stroke-width={stroke}
           stroke-linecap="round"
           stroke-dasharray={circumference}
@@ -133,10 +126,10 @@ function RadialDial({ percent, state }: { percent: number; state: string }) {
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
         />
         <g class={`dial-ticks ${state}`}>
-          {Array.from({ length: 48 }).map((_, i) => {
-            const a = (i / 48) * Math.PI * 2;
-            const inner = radius - stroke * 2 - 4;
-            const outer = radius - stroke - 2;
+          {Array.from({ length: 12 }).map((_, i) => {
+            const a = (i / 12) * Math.PI * 2;
+            const inner = radius - stroke * 2 - 3;
+            const outer = radius - stroke - 1;
             const cx = size / 2;
             const cy = size / 2;
             return (
@@ -146,7 +139,7 @@ function RadialDial({ percent, state }: { percent: number; state: string }) {
                 y1={cy + Math.sin(a) * inner}
                 x2={cx + Math.cos(a) * outer}
                 y2={cy + Math.sin(a) * outer}
-                stroke-width={i % 12 === 0 ? 1.5 : 0.6}
+                stroke-width={0.6}
               />
             );
           })}
