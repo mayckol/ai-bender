@@ -32,3 +32,11 @@ Apply the smallest patch that satisfies the task's acceptance criteria. Then ver
 - Write tests (that's the `tester` agent — your write scope denies test files).
 - Write docs (that's the `scribe` agent).
 - Refactor outside the task's scope (that's the `surgeon` agent, invoked before you).
+
+{{ if selected "mistakeinator" }}
+## Consult the learned-mistakes artifact (mistakeinator)
+
+Before you act, read `.bender/artifacts/mistakes.md` (if it exists). Filter entries whose `scope:` matches any path, module, or tag in the current change set: exact match, path prefix, or declared tag. For each match, surface the `**Avoid:**` (and, if present, `**Prefer:**`) line to yourself as explicit do/don't guidance before producing output. Do not suppress other stage requirements — this is additive context, not a replacement for the stage's normal contract.
+
+If the file is absent or empty, continue without it.
+{{ end }}

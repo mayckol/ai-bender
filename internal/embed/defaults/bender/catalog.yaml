@@ -1,0 +1,125 @@
+# Component Catalog — the declarative registry of every agent + skill the
+# harness can scaffold, classified mandatory vs optional. Single source of
+# truth for `bender init`; consumed by internal/catalog + internal/selection
+# + internal/render. Schema in specs/003-init-optional-skills/contracts/
+# catalog.schema.yaml.
+
+schema_version: 1
+
+components:
+  # ── mandatory core ────────────────────────────────────────────────────
+  scout:
+    optional: false
+    description: "Orientation — read-only codebase exploration before any editing stage."
+    paths:
+      agent: claude/agents/scout.md
+      skills:
+        - claude/skills/bg-scout-explore
+        - claude/skills/bg-scout-summarize
+      pipeline_nodes: [scout]
+
+  architect:
+    optional: false
+    description: "Design & validation — data model, API contracts, boundary analysis."
+    paths:
+      agent: claude/agents/architect.md
+      skills:
+        - claude/skills/bg-architect-validate
+        - claude/skills/fg-architect-design
+      pipeline_nodes: [architect]
+
+  crafter:
+    optional: false
+    description: "Implementation — minimum-diff patches against the planned data model and API contract."
+    paths:
+      agent: claude/agents/crafter.md
+      skills:
+        - claude/skills/bg-crafter-implement
+        - claude/skills/bg-crafter-verify-build
+      pipeline_nodes: [tdd-implement, plain-impl]
+
+  tester:
+    optional: false
+    description: "Tests — scaffolds, authors, and runs the suite; gates TDD cycles."
+    paths:
+      agent: claude/agents/tester.md
+      skills:
+        - claude/skills/bg-tester-run
+        - claude/skills/bg-tester-scaffold
+        - claude/skills/bg-tester-write-and-run
+        - claude/skills/fg-tester-scaffold
+      pipeline_nodes: [tdd-scaffold, tdd-verify, plain-tests]
+
+  linter:
+    optional: false
+    description: "Lint + safe autofixes (formatting, import sorting)."
+    paths:
+      agent: claude/agents/linter.md
+      skills:
+        - claude/skills/bg-linter-run-and-fix
+        - claude/skills/bg-linter-report
+      pipeline_nodes: [linter]
+
+  reviewer:
+    optional: false
+    description: "Change-set critique + PR summary."
+    paths:
+      agent: claude/agents/reviewer.md
+      skills:
+        - claude/skills/bg-reviewer-critique
+        - claude/skills/bg-reviewer-pr-summary
+      pipeline_nodes: [reviewer]
+
+  scribe:
+    optional: false
+    description: "Docs + inline comments."
+    paths:
+      agent: claude/agents/scribe.md
+      skills:
+        - claude/skills/bg-scribe-update-docs
+        - claude/skills/bg-scribe-inline-comments
+      pipeline_nodes: [scribe]
+
+  # ── optional ──────────────────────────────────────────────────────────
+  surgeon:
+    optional: true
+    default: true
+    description: "Behaviour-preserving refactors. Only fires on plans that flag requires_refactor."
+    paths:
+      agent: claude/agents/surgeon.md
+      skills:
+        - claude/skills/bg-surgeon-refactor
+        - claude/skills/bg-surgeon-verify-behavior
+      pipeline_nodes: [surgeon]
+
+  sentinel:
+    optional: true
+    default: true
+    description: "Security sweep — static scan + runtime-path audit."
+    paths:
+      agent: claude/agents/sentinel.md
+      skills:
+        - claude/skills/bg-sentinel-static-scan
+        - claude/skills/bg-sentinel-runtime-paths
+      pipeline_nodes: [sentinel]
+
+  benchmarker:
+    optional: true
+    default: true
+    description: "Performance — static hot-path analysis; benchmark measurement against baseline."
+    paths:
+      agent: claude/agents/benchmarker.md
+      skills:
+        - claude/skills/bg-benchmarker-analyze
+        - claude/skills/bg-benchmarker-measure
+      pipeline_nodes: [benchmarker]
+
+  mistakeinator:
+    optional: true
+    default: true
+    description: "Learned mistakes — appends common AI mistakes; plan/crafter/reviewer surface matching entries as do/don't guidance."
+    paths:
+      agent: claude/agents/mistakeinator.md
+      skills:
+        - claude/skills/bg-mistakeinator-record
+      pipeline_nodes: [mistakeinator]

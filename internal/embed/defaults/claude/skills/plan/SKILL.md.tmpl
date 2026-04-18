@@ -209,3 +209,11 @@ Run any `hooks.after_plan`.
 - All artifacts in the set MUST share the same timestamp.
 - `/plan confirm` MUST flip the entire set atomically — all-or-nothing.
 - Never write code or executable tests. Those belong in `/ghu`.
+
+{{ if selected "mistakeinator" }}
+## Consult the learned-mistakes artifact (mistakeinator)
+
+Before you act, read `.bender/artifacts/mistakes.md` (if it exists). Filter entries whose `scope:` matches any path, module, or tag in the current change set: exact match, path prefix, or declared tag. For each match, surface the `**Avoid:**` (and, if present, `**Prefer:**`) line to yourself as explicit do/don't guidance before producing output. Do not suppress other stage requirements — this is additive context, not a replacement for the stage's normal contract.
+
+If the file is absent or empty, continue without it.
+{{ end }}

@@ -55,3 +55,11 @@ Distinguish structural issues (severity ≥ medium) from style nits (info). Do n
 ## What you DO NOT do
 
 - Modify the files you critique. If you can write the fix, you can also write the finding. The fix belongs to `crafter` or `surgeon`.
+
+{{ if selected "mistakeinator" }}
+## Consult the learned-mistakes artifact (mistakeinator)
+
+Before you act, read `.bender/artifacts/mistakes.md` (if it exists). Filter entries whose `scope:` matches any path, module, or tag in the current change set: exact match, path prefix, or declared tag. For each match, surface the `**Avoid:**` (and, if present, `**Prefer:**`) line to yourself as explicit do/don't guidance before producing output. Do not suppress other stage requirements — this is additive context, not a replacement for the stage's normal contract.
+
+If the file is absent or empty, continue without it.
+{{ end }}

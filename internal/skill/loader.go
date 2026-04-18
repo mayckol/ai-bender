@@ -1,12 +1,14 @@
 package skill
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
 	"path"
 	"sort"
 	"strings"
+	"text/template"
 
 	"github.com/mayckol/ai-bender/internal/types"
 )
@@ -55,12 +57,33 @@ func (c *Catalog) walk(root fs.FS, base string, origin types.Origin) ([]string, 
 		if d.IsDir() {
 			return nil
 		}
-		if path.Base(p) != "SKILL.md" {
+		base := path.Base(p)
+		isTmpl := base == "SKILL.md.tmpl"
+		if base != "SKILL.md" && !isTmpl {
 			return nil
+		}
+		// A SKILL.md and a SKILL.md.tmpl cannot coexist in the same
+		// directory; prefer the .tmpl (it is the source of truth; the
+		// verbatim variant would be a stale rendered artefact). The
+		// catalog's map uses skill name (from frontmatter), so the last
+		// write wins here — defensive tiebreak only.
+		if isTmpl {
+			sibling := strings.TrimSuffix(p, ".tmpl")
+			if _, err := fs.Stat(root, sibling); err == nil {
+				return nil // use the verbatim SKILL.md adjacent to this .tmpl
+			}
 		}
 		data, readErr := fs.ReadFile(root, p)
 		if readErr != nil {
 			return fmt.Errorf("read %s: %w", p, readErr)
+		}
+		if isTmpl {
+			rendered, renderErr := renderSkillForCatalog(data)
+			if renderErr != nil {
+				warnings = append(warnings, fmt.Sprintf("%s: template render for catalog: %v", p, renderErr))
+				return nil
+			}
+			data = rendered
 		}
 		s, parseErr := ParseFrontmatter(data)
 		if parseErr != nil {
@@ -117,3 +140,23 @@ func (c *Catalog) All() []*Skill {
 
 // Len returns the number of skills currently in the catalog.
 func (c *Catalog) Len() int { return len(c.skills) }
+
+// renderSkillForCatalog renders a SKILL.md.tmpl with an "everything
+// selected" view so ParseFrontmatter can read the embedded skill. We
+// deliberately do not wire the live Component Catalog here — that would
+// create an import cycle and, for diagnostic purposes, a fully-populated
+// render is strictly more informative than a pruned one.
+func renderSkillForCatalog(src []byte) ([]byte, error) {
+	tmpl, err := template.New("skill").Funcs(template.FuncMap{
+		"selected":    func(string) bool { return true },
+		"description": func(string) string { return "" },
+	}).Parse(string(src))
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, nil); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
