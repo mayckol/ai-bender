@@ -190,6 +190,84 @@ func TestInit_AddBackPreviouslySkipped(t *testing.T) {
 	}
 }
 
+// TestInit_RemovePreviouslyInstalled: US3.
+// Start from full scaffold, re-init deselecting sentinel, assert sentinel
+// files gone and unrelated files untouched.
+func TestInit_RemovePreviouslyInstalled(t *testing.T) {
+	bin := buildBenderOnce(t)
+	work := mkProject(t)
+	if _, _, code := runBenderExit(t, bin, work, "init"); code != 0 {
+		t.Fatal("full init failed")
+	}
+	// Pre-flight: sentinel files present.
+	if _, err := os.Stat(filepath.Join(work, ".claude", "agents", "sentinel.md")); err != nil {
+		t.Fatalf("pre-flight: sentinel.md: %v", err)
+	}
+	// Capture an unrelated file.
+	unrelated := filepath.Join(work, ".claude", "agents", "scout.md")
+	before, _ := os.ReadFile(unrelated)
+
+	stdout, _, code := runBenderExit(t, bin, work, "init", "--without", "sentinel")
+	if code != 0 {
+		t.Fatalf("remove init failed (exit %d)", code)
+	}
+
+	// Sentinel files removed.
+	if _, err := os.Stat(filepath.Join(work, ".claude", "agents", "sentinel.md")); !os.IsNotExist(err) {
+		t.Errorf("sentinel.md should be removed: %v", err)
+	}
+	for _, sk := range []string{"bg-sentinel-static-scan", "bg-sentinel-runtime-paths"} {
+		if _, err := os.Stat(filepath.Join(work, ".claude", "skills", sk)); !os.IsNotExist(err) {
+			t.Errorf("%s should be removed: %v", sk, err)
+		}
+	}
+	// Unrelated file unchanged.
+	after, _ := os.ReadFile(unrelated)
+	if !bytes.Equal(before, after) {
+		t.Errorf("scout.md should be untouched")
+	}
+	// Summary shows excluded.
+	if !strings.Contains(stdout, "sentinel") {
+		t.Errorf("summary should mention sentinel as excluded: %s", stdout)
+	}
+}
+
+// TestInit_RemoveWithLocalEdits_PreservedWithoutForce: US3 safety.
+// A user-edited file belonging to a deselected component is NOT removed
+// without --force.
+func TestInit_RemoveWithLocalEdits_PreservedWithoutForce(t *testing.T) {
+	bin := buildBenderOnce(t)
+	work := mkProject(t)
+	if _, _, code := runBenderExit(t, bin, work, "init"); code != 0 {
+		t.Fatal("full init failed")
+	}
+	sentinelAgent := filepath.Join(work, ".claude", "agents", "sentinel.md")
+	// Edit it.
+	edited := []byte("# user-edited sentinel override\n")
+	if err := os.WriteFile(sentinelAgent, edited, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Deselect without --force.
+	if _, _, code := runBenderExit(t, bin, work, "init", "--without", "sentinel"); code != 0 {
+		t.Fatalf("re-init exited non-zero; user edit should just be preserved")
+	}
+	// File should remain on disk.
+	after, err := os.ReadFile(sentinelAgent)
+	if err != nil {
+		t.Fatalf("sentinel.md should be preserved: %v", err)
+	}
+	if !bytes.Equal(after, edited) {
+		t.Errorf("user-edited sentinel.md was modified: %s", after)
+	}
+	// --force removes it.
+	if _, _, code := runBenderExit(t, bin, work, "init", "--without", "sentinel", "--force"); code != 0 {
+		t.Fatalf("forced re-init failed (exit %d)", code)
+	}
+	if _, err := os.Stat(sentinelAgent); !os.IsNotExist(err) {
+		t.Errorf("sentinel.md should be removed under --force")
+	}
+}
+
 // TestInit_MistakeinatorDirective: Phase 5 — rendered plan SKILL contains or
 // omits the mistakes-loading block based on selection.
 func TestInit_MistakeinatorDirective(t *testing.T) {
