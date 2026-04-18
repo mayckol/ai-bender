@@ -19,7 +19,7 @@ export function SessionList() {
   const [error, setError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [view, setView] = useState<View>('list');
+  const [view, setView] = useState<View>('flow');
 
   useEffect(() => {
     let mounted = true;
@@ -78,8 +78,8 @@ export function SessionList() {
             value={view}
             onChange={setView}
             options={[
-              { value: 'list', label: 'List', glyph: '≡' },
               { value: 'flow', label: 'Flow', glyph: '◈' },
+              { value: 'list', label: 'List', glyph: '≡' },
             ]}
           />
           {sessions.length > 0 && (

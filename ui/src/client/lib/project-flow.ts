@@ -95,6 +95,7 @@ export function buildFlowWaves(
 
   // First pass — assign wave membership from orchestrator decisions so the
   // parallel signal survives any event re-ordering.
+  const seenDispatchSignatures = new Set<string>();
   for (const ev of events) {
     if (ev.type !== 'orchestrator_decision') continue;
     const p = (ev.payload ?? {}) as Record<string, unknown>;
@@ -103,6 +104,11 @@ export function buildFlowWaves(
     if (kind === 'parallel_dispatch') {
       const agents = pickStringArray(p, ['dispatched_agents']);
       if (agents.length === 0) continue;
+      // Idempotency — two decisions with the same sorted member set are
+      // the same dispatch re-emitted; don't create a second wave.
+      const sig = [...agents].sort().join('|');
+      if (seenDispatchSignatures.has(sig)) continue;
+      seenDispatchSignatures.add(sig);
       const waveId = `wave-p-${++waveCounter}`;
       seedWave(waveId, true);
       for (const a of agents) {
@@ -254,4 +260,186 @@ function pickStringArray(payload: Record<string, unknown>, keys: string[]): stri
     }
   }
   return [];
+}
+
+/**
+ * Session-scoped wave builder. One node per `skill_invoked` event — the
+ * node represents a single agent × skill invocation, not a collapsed
+ * agent. No `crafter` / `ship` anchors (the session page shows a complete
+ * story; anchors would be noise).
+ *
+ * Parallel grouping: a `parallel_dispatch` orchestrator_decision opens a
+ * window whose `dispatched_agents` share a wave. The window closes when
+ * every member has emitted a terminal event. Skills invoked while the
+ * window is open AND whose agent is a member fall into that wave;
+ * everything else gets its own solo wave.
+ */
+export function buildSessionWaves(events: BenderEvent[], _state: SessionState | null): FlowWave[] {
+  interface OpenInvocation {
+    node: FlowNode;
+    skill: string;
+  }
+
+  interface ParallelWindow {
+    waveId: string;
+    remaining: Set<string>;
+  }
+
+  const waves: FlowWave[] = [];
+  const waveIndex = new Map<string, FlowWave>();
+  const openByAgent = new Map<string, OpenInvocation[]>();
+  let parallel: ParallelWindow | null = null;
+  let pCounter = 0;
+  let sCounter = 0;
+  let invocCounter = 0;
+
+  const ensureWave = (waveId: string, isParallel: boolean): FlowWave => {
+    let w = waveIndex.get(waveId);
+    if (!w) {
+      w = { id: waveId, nodes: [], parallel: isParallel };
+      waveIndex.set(waveId, w);
+      waves.push(w);
+    }
+    return w;
+  };
+
+  for (const ev of events) {
+    const p = (ev.payload ?? {}) as Record<string, unknown>;
+    const agent = typeof p.agent === 'string' ? p.agent : '';
+
+    if (ev.type === 'orchestrator_decision') {
+      const kind = typeof p.decision_type === 'string' ? p.decision_type : '';
+      if (kind === 'parallel_dispatch') {
+        const agents = pickStringArray(p, ['dispatched_agents']);
+        if (agents.length >= 2) {
+          // Idempotency: if a window with the same member set is already
+          // open, treat this as a re-emission and keep the existing
+          // window so downstream skill_invokeds stay in one wave.
+          const sameAsOpen =
+            parallel !== null &&
+            parallel.remaining.size === agents.length &&
+            agents.every((a) => parallel!.remaining.has(a));
+          if (!sameAsOpen) {
+            pCounter++;
+            parallel = {
+              waveId: `wave-p-${pCounter}`,
+              remaining: new Set(agents),
+            };
+          }
+        }
+      }
+      continue;
+    }
+
+    if (!agent) continue;
+
+    if (ev.type === 'skill_invoked') {
+      const skill = typeof p.skill === 'string' ? p.skill : '';
+      if (!skill) continue;
+
+      // Idempotency: the same (agent, skill) pair already has an open
+      // invocation → skip the duplicate event.
+      const existing = openByAgent.get(agent);
+      if (existing && existing.some((o) => o.skill === skill)) continue;
+
+      let waveId: string;
+      let isParallel: boolean;
+      if (parallel && parallel.remaining.has(agent)) {
+        waveId = parallel.waveId;
+        isParallel = true;
+      } else {
+        sCounter++;
+        waveId = `wave-s-${sCounter}`;
+        isParallel = false;
+      }
+
+      const wave = ensureWave(waveId, isParallel);
+      invocCounter++;
+      const node: FlowNode = {
+        id: `node-${agent}-${skill}-${invocCounter}`,
+        agent,
+        skill,
+        state: 'running',
+        waveId,
+        startedAt: ev.timestamp,
+      };
+      wave.nodes.push(node);
+      // Promote to parallel once the wave has two or more members.
+      if (wave.nodes.length > 1) wave.parallel = true;
+
+      const stack = openByAgent.get(agent) ?? [];
+      stack.push({ node, skill });
+      openByAgent.set(agent, stack);
+      continue;
+    }
+
+    if (ev.type === 'skill_completed' || ev.type === 'skill_failed') {
+      const skill = typeof p.skill === 'string' ? p.skill : '';
+      const stack = openByAgent.get(agent);
+      if (!stack || stack.length === 0) continue;
+      // Match the most recent open invocation with the same skill name;
+      // fall back to the most recent if no exact match (defensive).
+      let idx = -1;
+      for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].skill === skill) { idx = i; break; }
+      }
+      if (idx === -1) idx = stack.length - 1;
+      const open = stack[idx];
+      if (ev.type === 'skill_completed') {
+        open.node.state = 'completed';
+        open.node.completedAt = ev.timestamp;
+      } else {
+        open.node.state = 'failed';
+        open.node.completedAt = ev.timestamp;
+      }
+      stack.splice(idx, 1);
+      if (stack.length === 0) openByAgent.delete(agent);
+      continue;
+    }
+
+    if (ev.type === 'agent_failed') {
+      const stack = openByAgent.get(agent);
+      if (stack && stack.length > 0) {
+        const open = stack[stack.length - 1];
+        open.node.state = 'failed';
+        open.node.completedAt = ev.timestamp;
+        stack.pop();
+      }
+      if (parallel && parallel.remaining.has(agent)) {
+        parallel.remaining.delete(agent);
+        if (parallel.remaining.size === 0) parallel = null;
+      }
+      continue;
+    }
+
+    if (ev.type === 'agent_blocked') {
+      const stack = openByAgent.get(agent);
+      if (stack && stack.length > 0) {
+        const open = stack[stack.length - 1];
+        open.node.state = 'blocked';
+        stack.pop();
+      }
+      if (parallel && parallel.remaining.has(agent)) {
+        parallel.remaining.delete(agent);
+        if (parallel.remaining.size === 0) parallel = null;
+      }
+      continue;
+    }
+
+    if (ev.type === 'agent_completed') {
+      if (parallel && parallel.remaining.has(agent)) {
+        parallel.remaining.delete(agent);
+        if (parallel.remaining.size === 0) parallel = null;
+      }
+      continue;
+    }
+  }
+
+  // Sort members of parallel waves deterministically for stable render.
+  for (const wave of waves) {
+    if (wave.parallel) {
+      wave.nodes.sort((a, b) => a.agent.localeCompare(b.agent) || a.id.localeCompare(b.id));
+    }
+  }
+  return waves;
 }

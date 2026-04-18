@@ -1,20 +1,41 @@
+import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
-import { agentColor } from '../lib/agents.ts';
+import { agentColor, responsibleAgent } from '../lib/agents.ts';
 import type { BenderEvent, SessionExport, SessionState, SessionSummary } from '../lib/api.ts';
 import {
   buildFlowWaves,
+  buildSessionWaves,
   pickLiveGhu,
   type FlowNode,
   type FlowWave,
   type NodeState,
 } from '../lib/project-flow.ts';
 import { subscribeSSE } from '../lib/sse.ts';
+import { EventRow } from './EventRow.tsx';
 
 interface Props {
   sessions: SessionSummary[];
 }
 
+/**
+ * Idempotency signature for a single event — two events producing the same
+ * key are treated as duplicates and dropped at ingest. Guards against
+ * SSE snapshot + tail overlap and any upstream re-emission.
+ */
+function flowEventKey(ev: BenderEvent): string {
+  const p = (ev.payload ?? {}) as Record<string, unknown>;
+  const agent = typeof p.agent === 'string' ? p.agent : '';
+  const skill = typeof p.skill === 'string' ? p.skill : '';
+  const decision = typeof p.decision_type === 'string' ? p.decision_type : '';
+  const dispatched = Array.isArray(p.dispatched_agents) ? (p.dispatched_agents as unknown[]).join(',') : '';
+  return `${ev.timestamp}|${ev.type}|${ev.actor?.kind ?? ''}|${ev.actor?.name ?? ''}|${agent}|${skill}|${decision}|${dispatched}`;
+}
+
+/**
+ * Stages-list variant: picks the latest /ghu or /implement session from the
+ * sessions list, subscribes to its SSE stream, and renders the flow.
+ */
 export function LiveProjectFlow({ sessions }: Props) {
   const liveGhu = useMemo(() => pickLiveGhu(sessions), [sessions]);
 
@@ -23,26 +44,42 @@ export function LiveProjectFlow({ sessions }: Props) {
   const liveId = liveGhu?.id ?? null;
   const isLive = liveGhu?.state.status === 'running';
 
+  const seenRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     if (!liveId) {
       setEvents([]);
       setState(null);
+      seenRef.current = new Set();
       return;
     }
     setEvents([]);
     setState(null);
+    seenRef.current = new Set();
     const stop = subscribeSSE(`/api/sessions/${encodeURIComponent(liveId)}/stream`, {
       handlers: {
         snapshot: (ev) => {
           try {
             const snap = JSON.parse(ev.data) as SessionExport;
             setState(snap.state);
-            setEvents(snap.events);
+            const seen = new Set<string>();
+            const deduped: BenderEvent[] = [];
+            for (const e of snap.events) {
+              const k = flowEventKey(e);
+              if (seen.has(k)) continue;
+              seen.add(k);
+              deduped.push(e);
+            }
+            seenRef.current = seen;
+            setEvents(deduped);
           } catch { /* keep current */ }
         },
         event: (ev) => {
           try {
             const parsed = JSON.parse(ev.data) as BenderEvent;
+            const k = flowEventKey(parsed);
+            if (seenRef.current.has(k)) return;
+            seenRef.current.add(k);
             setEvents((prev) => [...prev, parsed]);
           } catch { /* skip malformed */ }
         },
@@ -54,43 +91,134 @@ export function LiveProjectFlow({ sessions }: Props) {
     return stop;
   }, [liveId]);
 
+  const header = liveGhu
+    ? {
+        kicker: isLive ? 'LIVE BACKGROUND RUN' : 'LAST RUN',
+        title: (
+          <a href={`/sessions/${liveGhu.id}`}>
+            <code>{liveGhu.state.command}</code> · {liveGhu.id}
+          </a>
+        ),
+        idle: false,
+      }
+    : {
+        kicker: 'IDLE',
+        title: <>No <code>/ghu</code> run yet — anchors show the conceptual flow.</>,
+        idle: true,
+      };
+
   const waves = useMemo(() => buildFlowWaves(events, state, isLive), [events, state, isLive]);
 
+  return (
+    <FlowCanvas
+      events={events}
+      waves={waves}
+      header={header}
+      resetKey={liveId}
+    />
+  );
+}
+
+/**
+ * Single-session variant used on the Timeline page. Takes events + state
+ * straight from the Timeline's own SSE subscription; no header (Timeline
+ * provides the "002 PIPELINE" card frame and kicker itself).
+ */
+interface SessionAgentFlowProps {
+  events: BenderEvent[];
+  state: SessionState | null;
+}
+
+export function SessionAgentFlow({ events, state }: SessionAgentFlowProps) {
+  const waves = useMemo(() => buildSessionWaves(events, state), [events, state]);
+  return (
+    <FlowCanvas
+      events={events}
+      waves={waves}
+      header={null}
+      resetKey={state?.session_id ?? null}
+      agentTinted
+    />
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared canvas — header + grid + chain + dive                        */
+/* ------------------------------------------------------------------ */
+interface FlowCanvasHeader {
+  kicker: string;
+  title: ComponentChildren;
+  idle: boolean;
+}
+
+interface FlowCanvasProps {
+  events: BenderEvent[];
+  waves: FlowWave[];
+  header: FlowCanvasHeader | null;
+  resetKey: string | null;
+  agentTinted?: boolean;
+}
+
+function FlowCanvas({ events, waves, header, resetKey, agentTinted }: FlowCanvasProps) {
+  const [diveAgent, setDiveAgent] = useState<string | null>(null);
   const zoom = useFlowZoom();
+
+  // Collapse dive state when the tracked session changes.
+  useEffect(() => { setDiveAgent(null); }, [resetKey]);
+
+  if (diveAgent) {
+    return (
+      <NodeDive
+        agent={diveAgent}
+        events={events}
+        waves={waves}
+        onBack={() => setDiveAgent(null)}
+      />
+    );
+  }
 
   return (
     <div class="pfchain-frame">
-      {liveGhu ? (
-        <header class="pfchain-head">
-          <div class="pfchain-kicker">{isLive ? 'LIVE BACKGROUND RUN' : 'LAST RUN'}</div>
-          <div class="pfchain-title">
-            <a href={`/sessions/${liveGhu.id}`}>
-              <code>{liveGhu.state.command}</code> · {liveGhu.id}
-            </a>
-          </div>
+      {header && (
+        <header class={`pfchain-head${header.idle ? ' pfchain-head-idle' : ''}`}>
+          <div class="pfchain-kicker">{header.kicker}</div>
+          <div class="pfchain-title">{header.title}</div>
           <div class="pfchain-meta">
             <WaveStats waves={waves} />
             <ZoomControls zoom={zoom} />
           </div>
         </header>
-      ) : (
-        <header class="pfchain-head pfchain-head-idle">
-          <div class="pfchain-kicker">IDLE</div>
-          <div class="pfchain-title">No <code>/ghu</code> run yet — anchors show the conceptual flow.</div>
-          <ZoomControls zoom={zoom} />
-        </header>
       )}
 
-      <div class="pfchain-canvas" ref={zoom.containerRef}>
+      {!header && (
+        <div class="pfchain-toolbar">
+          <WaveStats waves={waves} />
+          <ZoomControls zoom={zoom} />
+        </div>
+      )}
+
+      <div class="pfchain-canvas" ref={zoom.attachContainer}>
+        <span class="pfcanvas-bracket pfcanvas-bracket-tl" aria-hidden="true" />
+        <span class="pfcanvas-bracket pfcanvas-bracket-tr" aria-hidden="true" />
+        <span class="pfcanvas-bracket pfcanvas-bracket-bl" aria-hidden="true" />
+        <span class="pfcanvas-bracket pfcanvas-bracket-br" aria-hidden="true" />
+        <div class="pfcanvas-axis" aria-hidden="true">
+          <span class="pfcanvas-axis-label">XY · 01</span>
+        </div>
+        <div class="pfcanvas-zoom-hint" aria-hidden="true">scroll to zoom · drag to pan · ⌘ for bigger steps</div>
         <ol
           class="pfchain"
-          ref={zoom.chainRef as any}
+          ref={zoom.attachChain}
           role="list"
-          style={{ ['--pf-scale' as string]: String(zoom.scale) }}
+          style={{
+            ['--pf-scale' as string]: String(zoom.scale),
+            ['--pf-tx' as string]: `${zoom.tx}px`,
+            ['--pf-ty' as string]: `${zoom.ty}px`,
+          }}
         >
           {waves.map((wave, idx) => (
             <li key={wave.id} class={`pfchain-slot${wave.parallel ? ' is-parallel' : ''}`}>
-              <WaveCell wave={wave} />
+              <WaveCell wave={wave} onDive={setDiveAgent} agentTinted={agentTinted} />
               {idx < waves.length - 1 && (
                 <Connector fromState={slotState(wave)} />
               )}
@@ -112,8 +240,10 @@ const MAX_SCALE = 1.5;
 interface FlowZoom {
   scale: number;
   mode: 'fit' | 'manual';
-  containerRef: { current: HTMLDivElement | null };
-  chainRef: { current: HTMLOListElement | null };
+  tx: number;
+  ty: number;
+  attachContainer: (el: HTMLDivElement | null) => void;
+  attachChain: (el: HTMLOListElement | null) => void;
   fit: () => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -121,54 +251,172 @@ interface FlowZoom {
 }
 
 function useFlowZoom(): FlowZoom {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const chainRef = useRef<HTMLOListElement | null>(null);
+  const containerElRef = useRef<HTMLDivElement | null>(null);
+  const chainElRef = useRef<HTMLOListElement | null>(null);
+  const scaleRef = useRef(1);
+  const txRef = useRef(0);
+  const tyRef = useRef(0);
+  const roRef = useRef<ResizeObserver | null>(null);
+  const wheelRef = useRef<((e: WheelEvent) => void) | null>(null);
+  const pointerDownRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const pointerMoveRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const pointerUpRef = useRef<((e: PointerEvent) => void) | null>(null);
+  const dragStateRef = useRef<{ x: number; y: number; startTx: number; startTy: number; pointerId: number } | null>(null);
   const [mode, setMode] = useState<'fit' | 'manual'>('fit');
-  const [scale, setScale] = useState(1);
+  const [scale, setScaleState] = useState(1);
+  const [tx, setTxState] = useState(0);
+  const [ty, setTyState] = useState(0);
+  const modeRef = useRef<'fit' | 'manual'>('fit');
 
-  // Observe container + content size; when in 'fit' mode, auto-scale so the
-  // chain fills the canvas without overflow. When in 'manual' mode, keep the
-  // user's chosen scale regardless.
+  const setScale = (v: number) => {
+    scaleRef.current = v;
+    setScaleState(v);
+  };
+  const setTranslation = (x: number, y: number) => {
+    txRef.current = x;
+    tyRef.current = y;
+    setTxState(x);
+    setTyState(y);
+  };
+  const step = (delta: number) => {
+    modeRef.current = 'manual';
+    setMode('manual');
+    const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Number((scaleRef.current + delta).toFixed(3))));
+    setScale(next);
+  };
+
+  // Fit-to-container calculation. Runs whenever the container or chain
+  // resizes, and respects the user's manual scale when they've touched +/-.
+  const calcFit = () => {
+    const container = containerElRef.current;
+    const chain = chainElRef.current;
+    if (!container || !chain) return;
+    if (modeRef.current !== 'fit') return;
+    const containerW = container.clientWidth - 36; // padding allowance
+    const natural = chain.scrollWidth / (scaleRef.current || 1);
+    if (natural <= 0 || containerW <= 0) return;
+    const next = Math.max(MIN_SCALE, Math.min(1, containerW / natural));
+    setScale(Number(next.toFixed(3)));
+  };
+
+  // Keep modeRef in sync for the observer + wheel handlers that read it
+  // without going through React state.
   useEffect(() => {
-    if (!containerRef.current || !chainRef.current) return;
-    const calcFit = () => {
-      const container = containerRef.current;
-      const chain = chainRef.current;
-      if (!container || !chain) return;
-      const containerW = container.clientWidth;
-      // Measure the un-scaled layout width by inverting the current scale.
-      const natural = chain.scrollWidth / (scale || 1);
-      if (natural <= 0 || containerW <= 0) return;
-      const next = Math.max(MIN_SCALE, Math.min(1, containerW / natural));
-      setScale(Number(next.toFixed(3)));
-    };
+    modeRef.current = mode;
     if (mode === 'fit') calcFit();
-    const ro = new ResizeObserver(() => {
-      if (mode === 'fit') calcFit();
-    });
-    ro.observe(containerRef.current);
-    ro.observe(chainRef.current);
-    return () => ro.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
-  const step = (delta: number) => {
-    setMode('manual');
-    setScale((s) => {
-      const next = Math.max(MIN_SCALE, Math.min(MAX_SCALE, Number((s + delta).toFixed(3))));
-      return next;
-    });
+  // Callback refs — attach listeners and observers exactly when the element
+  // mounts (and tear down when it unmounts). Avoids the timing fragility of
+  // relying on a useEffect to pick up a ref that "should be" populated.
+  const attachContainer = (el: HTMLDivElement | null) => {
+    // Detach from prior element.
+    const prev = containerElRef.current;
+    if (prev) {
+      if (wheelRef.current) prev.removeEventListener('wheel', wheelRef.current);
+      if (pointerDownRef.current) prev.removeEventListener('pointerdown', pointerDownRef.current);
+      if (pointerMoveRef.current) prev.removeEventListener('pointermove', pointerMoveRef.current);
+      if (pointerUpRef.current) {
+        prev.removeEventListener('pointerup', pointerUpRef.current);
+        prev.removeEventListener('pointercancel', pointerUpRef.current);
+      }
+    }
+    containerElRef.current = el;
+    if (!el) return;
+
+    // --- Wheel (zoom) ---
+    const onWheel = (e: WheelEvent) => {
+      // Plain wheel zooms (Figma-style); Cmd/Ctrl multiplies the step so
+      // trackpad pinch (ctrlKey=true) feels equivalent to mouse-wheel.
+      e.preventDefault();
+      const coarse = e.ctrlKey || e.metaKey;
+      const base = coarse ? 0.12 : 0.06;
+      const delta = e.deltaY < 0 ? base : -base;
+      step(delta);
+    };
+    wheelRef.current = onWheel;
+    el.addEventListener('wheel', onWheel, { passive: false });
+
+    // --- Pointer drag (pan) ---
+    const isInteractive = (target: EventTarget | null): boolean => {
+      if (!(target instanceof Element)) return false;
+      return !!target.closest('a, button, input, select, textarea, details > summary, .pfzoom, .pfnode-dive');
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      if (isInteractive(e.target)) return;
+      dragStateRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        startTx: txRef.current,
+        startTy: tyRef.current,
+        pointerId: e.pointerId,
+      };
+      try { el.setPointerCapture(e.pointerId); } catch { /* older browsers */ }
+      el.classList.add('is-panning');
+    };
+    const onPointerMove = (e: PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag || e.pointerId !== drag.pointerId) return;
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+      setTranslation(drag.startTx + dx, drag.startTy + dy);
+      if (modeRef.current !== 'manual') {
+        modeRef.current = 'manual';
+        setMode('manual');
+      }
+    };
+    const onPointerUp = (e: PointerEvent) => {
+      const drag = dragStateRef.current;
+      if (!drag) return;
+      if (e.pointerId !== drag.pointerId) return;
+      try { el.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+      dragStateRef.current = null;
+      el.classList.remove('is-panning');
+    };
+    pointerDownRef.current = onPointerDown;
+    pointerMoveRef.current = onPointerMove;
+    pointerUpRef.current = onPointerUp;
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', onPointerUp);
+    el.addEventListener('pointercancel', onPointerUp);
+
+    // (Re)wire the resize observer.
+    if (roRef.current) roRef.current.disconnect();
+    const ro = new ResizeObserver(() => calcFit());
+    ro.observe(el);
+    if (chainElRef.current) ro.observe(chainElRef.current);
+    roRef.current = ro;
+  };
+
+  const attachChain = (el: HTMLOListElement | null) => {
+    chainElRef.current = el;
+    if (!el || !roRef.current) return;
+    roRef.current.observe(el);
+    calcFit();
   };
 
   return {
     scale,
     mode,
-    containerRef,
-    chainRef,
-    fit: () => setMode('fit'),
+    tx,
+    ty,
+    attachContainer,
+    attachChain,
+    fit: () => {
+      modeRef.current = 'fit';
+      setMode('fit');
+      setTranslation(0, 0);
+    },
     zoomIn: () => step(0.1),
     zoomOut: () => step(-0.1),
-    reset: () => { setMode('manual'); setScale(1); },
+    reset: () => {
+      modeRef.current = 'manual';
+      setMode('manual');
+      setScale(1);
+      setTranslation(0, 0);
+    },
   };
 }
 
@@ -231,7 +479,7 @@ function StatChip({ label, value, tone }: { label: string; value: string; tone: 
   );
 }
 
-function WaveCell({ wave }: { wave: FlowWave }) {
+function WaveCell({ wave, onDive, agentTinted }: { wave: FlowWave; onDive?: (agent: string) => void; agentTinted?: boolean }) {
   if (wave.parallel) {
     return (
       <div class="pfwave pfwave-parallel">
@@ -240,7 +488,7 @@ function WaveCell({ wave }: { wave: FlowWave }) {
           <span class="pfwave-brace-pulse" />
         </div>
         <div class="pfwave-stack">
-          {wave.nodes.map((n) => <FlowNodeCard key={n.id} node={n} dense />)}
+          {wave.nodes.map((n) => <FlowNodeCard key={n.id} node={n} dense onDive={onDive} agentTinted={agentTinted} />)}
         </div>
       </div>
     );
@@ -248,18 +496,31 @@ function WaveCell({ wave }: { wave: FlowWave }) {
   const [node] = wave.nodes;
   return (
     <div class="pfwave pfwave-solo">
-      <FlowNodeCard node={node} />
+      <FlowNodeCard node={node} onDive={onDive} agentTinted={agentTinted} />
     </div>
   );
 }
 
-function FlowNodeCard({ node, dense }: { node: FlowNode; dense?: boolean }) {
+function FlowNodeCard({
+  node,
+  dense,
+  onDive,
+  agentTinted,
+}: {
+  node: FlowNode;
+  dense?: boolean;
+  onDive?: (agent: string) => void;
+  agentTinted?: boolean;
+}) {
   const color = node.isAnchor || node.agent === 'ship' ? 'var(--signal)' : agentColor(node.agent);
   const glyph = glyphFor(node);
+  // Dive only applies to actual agent nodes that have landed real events
+  // (skip the ship anchor; allow crafter even as anchor if it's been seen).
+  const canDive = !!onDive && node.agent !== 'ship' && node.state !== 'disabled';
   return (
     <div
-      class={`pfnode pfnode-${node.state}${node.isAnchor ? ' is-anchor' : ''}${dense ? ' is-dense' : ''}`}
-      style={node.state !== 'disabled' && node.state !== 'failed' ? { ['--pfnode-accent' as string]: color } : undefined}
+      class={`pfnode pfnode-${node.state}${node.isAnchor ? ' is-anchor' : ''}${dense ? ' is-dense' : ''}${canDive ? ' can-dive' : ''}${agentTinted ? ' is-agent-tinted' : ''}`}
+      style={agentTinted || (node.state !== 'disabled' && node.state !== 'failed') ? { ['--pfnode-accent' as string]: color } : undefined}
     >
       <span class="pfnode-tick pfnode-tick-tl" aria-hidden="true" />
       <span class="pfnode-tick pfnode-tick-tr" aria-hidden="true" />
@@ -277,6 +538,19 @@ function FlowNodeCard({ node, dense }: { node: FlowNode; dense?: boolean }) {
       <div class="pfnode-name">{node.agent}</div>
       {node.skill && <div class="pfnode-skill">{node.skill}</div>}
       <NodeStatusChip node={node} />
+      {canDive && (
+        <button
+          type="button"
+          class="pfnode-dive"
+          title={`Dive into ${node.agent}`}
+          aria-label={`Dive into ${node.agent}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onDive!(node.agent); }}
+        >
+          <span class="pfnode-dive-icon" aria-hidden="true">⤢</span>
+          <span class="pfnode-dive-label">dive</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -359,4 +633,105 @@ function fmtElapsed(ms: number): string {
   const m = Math.floor(s / 60);
   const rem = s - m * 60;
   return `${m}m${rem.toString().padStart(2, '0')}s`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Dive view — one node's events as a timeline                         */
+/* ------------------------------------------------------------------ */
+function NodeDive({
+  agent,
+  events,
+  waves,
+  onBack,
+}: {
+  agent: string;
+  events: BenderEvent[];
+  waves: FlowWave[];
+  onBack: () => void;
+}) {
+  const agentEvents = useMemo(() => {
+    const out: BenderEvent[] = [];
+    for (const ev of events) {
+      if (responsibleAgent(ev) === agent) out.push(ev);
+    }
+    return out;
+  }, [events, agent]);
+
+  const node = useMemo(() => {
+    for (const w of waves) {
+      for (const n of w.nodes) {
+        if (n.agent === agent) return n;
+      }
+    }
+    return null;
+  }, [waves, agent]);
+
+  const counts = useMemo(() => {
+    const c = { skills: 0, files: 0, findings: 0, progress: 0, started: 0, completed: 0, failed: 0 };
+    for (const ev of agentEvents) {
+      if (ev.type === 'skill_invoked') c.skills++;
+      else if (ev.type === 'file_changed') c.files++;
+      else if (ev.type === 'finding_reported') c.findings++;
+      else if (ev.type === 'agent_progress') c.progress++;
+      else if (ev.type === 'agent_started') c.started++;
+      else if (ev.type === 'agent_completed') c.completed++;
+      else if (ev.type === 'agent_failed' || ev.type === 'skill_failed') c.failed++;
+    }
+    return c;
+  }, [agentEvents]);
+
+  const accent = agentColor(agent);
+  const glyph = node ? glyphFor(node) : '●';
+  const status = node?.state ?? 'disabled';
+
+  return (
+    <div class="pfdive">
+      <header class="pfdive-head">
+        <button type="button" class="pfdive-back" onClick={onBack}>
+          <span class="pfdive-back-icon" aria-hidden="true">◂</span>
+          back to flow
+        </button>
+        <div class="pfdive-head-rule" aria-hidden="true" />
+        <div class={`pfdive-badge pfdive-badge-${status}`} style={{ ['--pfnode-accent' as string]: accent }}>
+          <span class="pfdive-badge-glyph" aria-hidden="true">{glyph}</span>
+          <div class="pfdive-badge-body">
+            <div class="pfdive-badge-name">{agent}</div>
+            {node?.skill && <div class="pfdive-badge-skill">{node.skill}</div>}
+          </div>
+          <span class={`pfdive-badge-chip chip-${status}`}>
+            <span class="pfnode-chip-dot" aria-hidden="true" />
+            {status}
+          </span>
+        </div>
+      </header>
+
+      <div class="pfdive-stats">
+        <DiveStat label="skills" value={counts.skills} />
+        <DiveStat label="files" value={counts.files} />
+        <DiveStat label="findings" value={counts.findings} tone={counts.findings > 0 ? 'warn' : undefined} />
+        <DiveStat label="progress" value={counts.progress} />
+        <DiveStat label="events" value={agentEvents.length} tone="signal" />
+      </div>
+
+      {agentEvents.length === 0 ? (
+        <div class="pfdive-empty">
+          <div class="pfdive-empty-rule" aria-hidden="true" />
+          <p>No events have landed for <code>{agent}</code> yet.</p>
+        </div>
+      ) : (
+        <div class="pfdive-timeline">
+          {agentEvents.map((ev, i) => <EventRow key={i} event={ev} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DiveStat({ label, value, tone }: { label: string; value: number; tone?: string }) {
+  return (
+    <div class={`pfdive-stat${tone ? ` tone-${tone}` : ''}`}>
+      <div class="pfdive-stat-key">{label}</div>
+      <div class="pfdive-stat-val">{String(value).padStart(2, '0')}</div>
+    </div>
+  );
 }

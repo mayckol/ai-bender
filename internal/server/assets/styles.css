@@ -380,21 +380,157 @@ table.sessions tr:hover { background: var(--panel-2); }
   position: relative;
   overflow: hidden;
   border-top: 1px dashed var(--border);
-  padding-top: 2px;
+  padding: 18px 18px 22px;
+  isolation: isolate;
+  background: var(--bg-deep);
+  min-height: 260px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.pfchain-canvas.is-panning {
+  cursor: grabbing;
+}
+.pfchain-canvas.is-panning .pfchain {
+  transition: none;
+}
+/* Restore pointer semantics for nested interactive elements so drag never
+   eats their clicks. */
+.pfchain-canvas a,
+.pfchain-canvas button,
+.pfchain-canvas summary,
+.pfchain-canvas .pfzoom {
+  cursor: pointer;
+}
+
+/* Layer 1 — blueprint grid.
+   Minor lines every 16px (subtle), major lines every 64px (brighter),
+   plus a glowing amber crosshair dot at every major intersection. The
+   whole thing fades radially so the edges don't compete with content. */
+.pfchain-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    /* major intersection dots */
+    radial-gradient(circle, rgba(242, 178, 99, 0.35) 0.6px, transparent 1.2px),
+    /* major grid */
+    linear-gradient(to right,  rgba(122, 162, 247, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(122, 162, 247, 0.1) 1px, transparent 1px),
+    /* minor grid */
+    linear-gradient(to right,  rgba(122, 162, 247, 0.028) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(122, 162, 247, 0.028) 1px, transparent 1px);
+  background-size:
+    64px 64px,
+    64px 64px,
+    64px 64px,
+    16px 16px,
+    16px 16px;
+  background-position: 0 0;
+  -webkit-mask-image: radial-gradient(ellipse 110% 105% at 50% 45%, #000 55%, rgba(0,0,0,0.1) 95%, transparent 100%);
+          mask-image: radial-gradient(ellipse 110% 105% at 50% 45%, #000 55%, rgba(0,0,0,0.1) 95%, transparent 100%);
+  animation: gridBreath 8s ease-in-out infinite;
+}
+
+/* Layer 2 — subtle depth overlay (radial glow in center) */
+.pfchain-canvas::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 50%, rgba(124, 231, 207, 0.03), transparent 70%),
+    radial-gradient(ellipse 80% 60% at 80% 10%, rgba(242, 178, 99, 0.04), transparent 70%);
+}
+
+@keyframes gridBreath {
+  0%, 100% { opacity: 0.9; }
+  50%      { opacity: 1; }
+}
+
+/* Corner brackets — CAD / mission-control signature */
+.pfcanvas-bracket {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--signal);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 2;
+}
+.pfcanvas-bracket-tl { top: 6px;    left: 6px;   border-right: none; border-bottom: none; }
+.pfcanvas-bracket-tr { top: 6px;    right: 6px;  border-left: none;  border-bottom: none; }
+.pfcanvas-bracket-bl { bottom: 6px; left: 6px;   border-right: none; border-top: none; }
+.pfcanvas-bracket-br { bottom: 6px; right: 6px;  border-left: none;  border-top: none; }
+
+/* Axis indicator — bottom-right */
+.pfcanvas-axis {
+  position: absolute;
+  bottom: 10px;
+  right: 22px;
+  z-index: 2;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  background: rgba(7, 9, 12, 0.75);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  color: var(--muted-strong);
+  text-transform: uppercase;
+}
+.pfcanvas-axis-label { opacity: 0.85; }
+.pfcanvas-axis::before {
+  content: "◉";
+  color: var(--signal);
+  font-size: 9px;
+  opacity: 0.7;
+}
+
+/* Zoom hint — bottom-left */
+.pfcanvas-zoom-hint {
+  position: absolute;
+  bottom: 10px;
+  left: 22px;
+  z-index: 2;
+  pointer-events: none;
+  padding: 2px 8px;
+  background: rgba(7, 9, 12, 0.75);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+  text-transform: uppercase;
+  opacity: 0.75;
 }
 
 .pfchain {
+  position: relative;
+  z-index: 1;
   list-style: none;
-  margin: 0;
-  padding: 8px 4px 16px;
+  margin: 0 auto;
+  padding: 8px 4px 30px;
   display: flex;
-  flex-wrap: wrap;
-  gap: 14px 0;
-  align-items: stretch;
-  transform: scale(var(--pf-scale, 1));
-  transform-origin: top left;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  transform: translate3d(var(--pf-tx, 0px), var(--pf-ty, 0px), 0) scale(var(--pf-scale, 1));
+  transform-origin: top center;
   transition: transform 260ms cubic-bezier(0.33, 1, 0.68, 1);
-  width: calc(100% / var(--pf-scale, 1));
+  width: max-content;
+  max-width: calc(100% / var(--pf-scale, 1));
+}
+
+.pfchain-slot {
+  flex-direction: column;
+  align-items: center;
 }
 
 .pfzoom {
@@ -452,46 +588,48 @@ table.sessions tr:hover { background: var(--panel-2); }
 
 .pfchain-slot {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 0;
   flex-shrink: 0;
 }
 
-/* Connector between slots */
+/* Vertical connector between slots (top-down) */
 .pfconn {
-  width: 46px;
-  height: 1px;
+  width: 1px;
+  height: 36px;
   position: relative;
   align-self: center;
-  margin: 0 4px;
+  margin: 6px 0;
 }
 .pfconn-beam {
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(90deg, var(--border-strong) 0 5px, transparent 5px 10px);
+  background: repeating-linear-gradient(180deg, var(--border-strong) 0 5px, transparent 5px 10px);
   opacity: 0.65;
 }
 .pfconn-head {
   position: absolute;
-  right: -6px;
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: -8px;
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg);
   font-family: var(--font-mono);
   color: var(--border-strong);
   font-size: 14px;
+  line-height: 1;
 }
 .pfconn-done .pfconn-beam {
-  background: linear-gradient(90deg, var(--phosphor) 0%, var(--phosphor-dim) 100%);
+  background: linear-gradient(180deg, var(--phosphor) 0%, var(--phosphor-dim) 100%);
   opacity: 0.8;
 }
 .pfconn-done .pfconn-head { color: var(--phosphor); }
 .pfconn-active .pfconn-beam {
-  background: linear-gradient(90deg, transparent 0%, var(--signal) 50%, transparent 100%);
-  background-size: 200% 100%;
+  background: linear-gradient(180deg, transparent 0%, var(--signal) 50%, transparent 100%);
+  background-size: 100% 200%;
   animation: connBeam 1.4s linear infinite;
   opacity: 1;
-  height: 2px;
-  top: -0.5px;
+  width: 2px;
+  left: -0.5px;
   box-shadow: 0 0 6px var(--signal-dim);
 }
 .pfconn-active .pfconn-head {
@@ -499,12 +637,12 @@ table.sessions tr:hover { background: var(--panel-2); }
   animation: connArrow 1s ease-in-out infinite;
 }
 @keyframes connBeam {
-  0%   { background-position: -100% 0; }
-  100% { background-position: 100% 0; }
+  0%   { background-position: 0 -100%; }
+  100% { background-position: 0 100%; }
 }
 @keyframes connArrow {
-  0%, 100% { transform: translate(0, -50%); opacity: 1; }
-  50%      { transform: translate(3px, -50%); opacity: 0.6; }
+  0%, 100% { transform: translate(-50%, 0) rotate(90deg); opacity: 1; }
+  50%      { transform: translate(-50%, 3px) rotate(90deg); opacity: 0.6; }
 }
 .pfconn-failed .pfconn-beam { background: var(--err); opacity: 0.6; }
 .pfconn-failed .pfconn-head { color: var(--err); }
@@ -514,7 +652,7 @@ table.sessions tr:hover { background: var(--panel-2); }
 .pfwave-solo { padding: 4px; }
 
 .pfwave-parallel {
-  padding: 18px 10px 10px;
+  padding: 22px 12px 14px;
   border: 1px dashed rgba(242, 178, 99, 0.4);
   background:
     repeating-linear-gradient(-40deg, rgba(242, 178, 99, 0.04) 0 6px, transparent 6px 16px),
@@ -524,8 +662,9 @@ table.sessions tr:hover { background: var(--panel-2); }
 
 .pfwave-parallel .pfwave-stack {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 14px;
 }
 
 .pfwave-brace {
@@ -559,19 +698,18 @@ table.sessions tr:hover { background: var(--panel-2); }
 .pfwave-parallel::before {
   content: "";
   position: absolute;
-  inset: 8px 0 0 0;
-  left: -1px;
-  width: 2px;
-  background: linear-gradient(180deg, var(--signal), transparent);
-  opacity: 0.5;
+  top: 0; left: -1px; right: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--signal), transparent);
+  opacity: 0.55;
 }
 .pfwave-parallel::after {
   content: "";
   position: absolute;
-  inset: 8px -1px 0 auto;
-  width: 2px;
-  background: linear-gradient(180deg, var(--signal), transparent);
-  opacity: 0.5;
+  bottom: 0; left: -1px; right: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--signal), transparent);
+  opacity: 0.4;
 }
 
 /* Flow node card */
@@ -706,6 +844,164 @@ table.sessions tr:hover { background: var(--panel-2); }
 }
 .pfnode-blocked .pfnode-glyph { color: var(--warn); }
 
+/* Agent-tinted variant — session-per-invocation nodes whose primary color
+   is the agent's palette color, not the state color. State still drives
+   the chip + running animations; it just doesn't override border/glyph. */
+.pfnode.is-agent-tinted {
+  border-color: color-mix(in srgb, var(--pfnode-accent) 55%, var(--border) 45%);
+}
+.pfnode.is-agent-tinted .pfnode-glyph { color: var(--pfnode-accent); }
+.pfnode.is-agent-tinted .pfnode-tick  { border-color: var(--pfnode-accent); opacity: 0.55; }
+.pfnode.is-agent-tinted .pfnode-name  { color: var(--text); }
+
+/* Completed agent-tinted stays in agent color (rather than flipping to phosphor) */
+.pfnode.is-agent-tinted.pfnode-completed {
+  border-color: var(--pfnode-accent);
+  box-shadow: inset 3px 0 0 0 color-mix(in srgb, var(--pfnode-accent) 70%, transparent);
+}
+.pfnode.is-agent-tinted.pfnode-completed .pfnode-glyph { color: var(--pfnode-accent); opacity: 0.92; }
+.pfnode.is-agent-tinted.pfnode-completed .pfnode-tick  { border-color: var(--pfnode-accent); opacity: 0.7; }
+
+/* Running agent-tinted — agent border + heartbeat in agent color + scan in agent color */
+.pfnode.is-agent-tinted.pfnode-running {
+  border-color: var(--pfnode-accent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--pfnode-accent) 18%, transparent),
+    0 20px 40px -22px color-mix(in srgb, var(--pfnode-accent) 50%, transparent);
+}
+.pfnode.is-agent-tinted.pfnode-running .pfnode-ring-outer { border-color: var(--pfnode-accent); }
+.pfnode.is-agent-tinted.pfnode-running .pfnode-ring-inner { border-color: var(--pfnode-accent); }
+.pfnode.is-agent-tinted.pfnode-running .pfnode-heart      { background: var(--pfnode-accent); box-shadow: 0 0 10px var(--pfnode-accent); }
+.pfnode.is-agent-tinted.pfnode-running .pfnode-scan       { background: linear-gradient(115deg, transparent 40%, color-mix(in srgb, var(--pfnode-accent) 26%, transparent) 50%, transparent 60%); }
+
+/* Failed agent-tinted — stay crimson (failure is a severity, not an identity) */
+.pfnode.is-agent-tinted.pfnode-failed {
+  border-color: var(--err);
+}
+.pfnode.is-agent-tinted.pfnode-failed .pfnode-glyph { color: var(--err); }
+.pfnode.is-agent-tinted.pfnode-failed .pfnode-tick  { border-color: var(--err); }
+
+/* Chip color also follows the agent when tinted (except for explicit severity states) */
+.pfnode.is-agent-tinted .pfnode-chip.chip-completed,
+.pfnode.is-agent-tinted .pfnode-chip.chip-running {
+  color: var(--pfnode-accent);
+  border-color: color-mix(in srgb, var(--pfnode-accent) 55%, var(--border) 45%);
+  background: color-mix(in srgb, var(--pfnode-accent) 10%, transparent);
+}
+.pfnode.is-agent-tinted .pfnode-chip.chip-running .pfnode-chip-dot    { background: var(--pfnode-accent); box-shadow: 0 0 8px var(--pfnode-accent); }
+.pfnode.is-agent-tinted .pfnode-chip.chip-completed .pfnode-chip-dot  { background: var(--pfnode-accent); box-shadow: 0 0 6px color-mix(in srgb, var(--pfnode-accent) 40%, transparent); }
+
+/* ------------------------------------------------------------------ */
+/* Hover treatment — disabled while panning so drag doesn't strobe    */
+/* ------------------------------------------------------------------ */
+.pfnode:hover {
+  border-color: var(--pfnode-accent, var(--signal));
+  transform: translateY(-3px);
+  box-shadow:
+    0 0 0 1px rgba(242, 178, 99, 0.08),
+    0 22px 38px -22px rgba(0, 0, 0, 0.55),
+    0 0 26px -6px var(--pfnode-accent, var(--signal-dim));
+  z-index: 3;
+}
+
+/* Corner ticks pop to the accent */
+.pfnode:hover .pfnode-tick {
+  opacity: 1;
+  border-color: var(--pfnode-accent, var(--signal));
+}
+
+/* Glyph warms up and nudges */
+.pfnode:hover .pfnode-glyph {
+  color: var(--pfnode-accent, var(--signal));
+  transform: translateY(-2px) scale(1.06);
+  transition: color 180ms ease, transform 220ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+/* Skill caption, if present, sharpens on hover */
+.pfnode:hover .pfnode-skill {
+  color: var(--text);
+  transition: color 180ms ease;
+}
+
+/* Name gets a touch more presence */
+.pfnode:hover .pfnode-name {
+  color: var(--text);
+  letter-spacing: -0.005em;
+}
+
+/* Running nodes — amplified pulse on hover without breaking the anim */
+.pfchain-canvas:not(.is-panning) .pfnode-running:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 0 0 1px rgba(242, 178, 99, 0.32),
+    0 24px 44px -20px rgba(242, 178, 99, 0.4),
+    0 0 40px -10px var(--signal);
+}
+.pfchain-canvas:not(.is-panning) .pfnode-running:hover .pfnode-ring-outer {
+  animation-duration: 3s;
+  opacity: 0.8;
+}
+.pfchain-canvas:not(.is-panning) .pfnode-running:hover .pfnode-ring-inner {
+  animation-duration: 1.1s;
+}
+.pfchain-canvas:not(.is-panning) .pfnode-running:hover .pfnode-scan {
+  animation-duration: 1.8s;
+}
+
+/* Completed — phosphor glow takes over on hover */
+.pfchain-canvas:not(.is-panning) .pfnode-completed:hover {
+  border-color: var(--phosphor);
+  box-shadow:
+    0 0 0 1px rgba(124, 231, 207, 0.12),
+    0 22px 38px -22px rgba(0, 0, 0, 0.55),
+    0 0 28px -6px var(--phosphor-dim);
+}
+.pfchain-canvas:not(.is-panning) .pfnode-completed:hover .pfnode-glyph {
+  color: var(--phosphor);
+}
+.pfchain-canvas:not(.is-panning) .pfnode-completed:hover .pfnode-tick {
+  border-color: var(--phosphor);
+}
+
+/* Failed — crimson ember on hover */
+.pfchain-canvas:not(.is-panning) .pfnode-failed:hover {
+  border-color: var(--err);
+  box-shadow:
+    0 0 0 1px rgba(247, 118, 142, 0.12),
+    0 22px 38px -22px rgba(0, 0, 0, 0.55),
+    0 0 30px -6px rgba(247, 118, 142, 0.35);
+}
+
+/* Disabled — don't colorise; just a gentle wake so the node still feels
+   interactive without pretending to be active. */
+.pfchain-canvas:not(.is-panning) .pfnode-disabled:hover {
+  opacity: 0.95;
+  border-style: solid;
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+  box-shadow:
+    0 16px 30px -20px rgba(0, 0, 0, 0.5);
+}
+.pfchain-canvas:not(.is-panning) .pfnode-disabled:hover .pfnode-tick {
+  border-color: var(--border-strong);
+  opacity: 0.9;
+}
+.pfchain-canvas:not(.is-panning) .pfnode-disabled:hover .pfnode-glyph {
+  opacity: 0.85;
+  color: var(--muted-strong);
+}
+
+/* Hovering a parallel batch lights its brace too */
+.pfwave-parallel:hover {
+  border-color: var(--signal);
+  box-shadow: 0 0 32px -12px rgba(242, 178, 99, 0.32);
+}
+.pfwave-parallel:hover .pfwave-brace {
+  color: var(--text);
+  border-color: var(--signal);
+  background: rgba(242, 178, 99, 0.12);
+}
+
 /* Running — full theatrical treatment */
 .pfnode-running {
   border-color: var(--pfnode-accent, var(--signal));
@@ -810,6 +1106,488 @@ table.sessions tr:hover { background: var(--panel-2); }
   .pfconn { width: 32px; }
 }
 
+/* ------------------------------------------------------------------ */
+/* Dive button on each node                                            */
+/* ------------------------------------------------------------------ */
+.pfnode-dive {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  background: rgba(7, 9, 12, 0.82);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 180ms ease, transform 180ms ease, color 140ms ease, border-color 140ms ease, background 140ms ease;
+  z-index: 4;
+}
+.pfnode.can-dive:hover .pfnode-dive,
+.pfnode-dive:focus-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.pfnode-dive:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+  background: rgba(242, 178, 99, 0.12);
+}
+.pfnode-dive-icon {
+  font-size: 11px;
+  line-height: 1;
+}
+.pfnode-dive-label {
+  letter-spacing: 0.18em;
+}
+
+/* Always-visible soft hint dot on divable nodes */
+.pfnode.can-dive::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--signal);
+  opacity: 0.55;
+  box-shadow: 0 0 6px var(--signal-dim);
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+.pfnode.can-dive:hover::after { opacity: 0; }
+
+/* ------------------------------------------------------------------ */
+/* Dive view — one node's events                                       */
+/* ------------------------------------------------------------------ */
+.pfdive {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 6px 2px 2px;
+}
+
+.pfdive-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pfdive-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease, background 140ms ease;
+}
+.pfdive-back:hover {
+  color: var(--signal);
+  border-color: var(--signal);
+  background: rgba(242, 178, 99, 0.08);
+}
+.pfdive-back-icon {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--signal);
+}
+
+.pfdive-head-rule {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border-strong), transparent);
+  min-width: 40px;
+}
+
+.pfdive-badge {
+  --pfnode-accent: var(--signal);
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border: 1px solid var(--pfnode-accent);
+  background:
+    linear-gradient(90deg, rgba(242, 178, 99, 0.08), transparent 60%),
+    var(--panel-2);
+  position: relative;
+}
+.pfdive-badge::before,
+.pfdive-badge::after {
+  content: "";
+  position: absolute;
+  width: 10px; height: 10px;
+  border: 1px solid var(--pfnode-accent);
+}
+.pfdive-badge::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.pfdive-badge::after  { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+
+.pfdive-badge-glyph {
+  font-family: var(--font-mono);
+  font-size: 26px;
+  line-height: 1;
+  color: var(--pfnode-accent);
+}
+.pfdive-badge-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.pfdive-badge-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  font-variation-settings: "wdth" 92;
+  color: var(--text);
+}
+.pfdive-badge-skill {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.pfdive-badge-chip {
+  margin-left: 6px;
+  padding: 3px 10px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pfdive-badge-running { border-color: var(--signal); }
+.pfdive-badge-completed .pfdive-badge-chip { color: var(--phosphor); border-color: var(--phosphor-dim); }
+
+.pfdive-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+}
+.pfdive-stat {
+  padding: 10px 14px;
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pfdive-stat-key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pfdive-stat-val {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: -0.015em;
+  font-variation-settings: "wdth" 86;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.pfdive-stat.tone-signal .pfdive-stat-val   { color: var(--signal); }
+.pfdive-stat.tone-warn .pfdive-stat-val     { color: var(--warn); }
+.pfdive-stat.tone-phosphor .pfdive-stat-val { color: var(--phosphor); }
+
+.pfdive-timeline {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  max-height: calc(100vh - 360px);
+  overflow-y: auto;
+}
+.pfdive-timeline .event-row {
+  grid-template-columns: 80px 150px 150px 1fr;
+}
+
+.pfdive-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px dashed var(--border);
+}
+.pfdive-empty p { margin: 0; line-height: 1.7; }
+.pfdive-empty code { color: var(--accent); }
+.pfdive-empty-rule {
+  width: 40px;
+  height: 1px;
+  background: var(--signal);
+  opacity: 0.6;
+}
+
+/* ------------------------------------------------------------------ */
+/* Swimlane / Gantt — top-down time, each agent a column               */
+/* ------------------------------------------------------------------ */
+.pfgraph {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 6px 2px 2px;
+}
+
+.pfgraph-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  align-items: center;
+  padding: 10px 14px;
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--phosphor);
+}
+
+.pfgraph-head-kicker {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-strong);
+  flex: 1;
+  min-width: 0;
+}
+
+.pfgraph-head-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+}
+.pfgraph-legend-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.pfgraph-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.pfgraph-legend-dot.legend-done    { background: var(--phosphor); }
+.pfgraph-legend-dot.legend-running { background: var(--signal); box-shadow: 0 0 6px var(--signal); }
+.pfgraph-legend-dot.legend-failed  { background: var(--err); }
+.pfgraph-legend-dash {
+  width: 16px; height: 8px;
+  border: 1px dashed rgba(242, 178, 99, 0.5);
+  border-radius: 2px;
+  background: rgba(242, 178, 99, 0.08);
+}
+
+.pfgraph-body {
+  display: grid;
+  grid-template-columns: 70px 1fr;
+  gap: 0;
+  border: 1px solid var(--border);
+  background: var(--bg-deep);
+  overflow: hidden;
+}
+
+/* Time axis — vertical (top-down) */
+.pfgraph-axis {
+  position: relative;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  padding-top: 34px; /* aligns with lane-head height */
+}
+
+.pfgraph-tick {
+  position: absolute;
+  left: 0;
+  right: -1px;
+  height: 1px;
+  display: flex;
+  align-items: center;
+}
+.pfgraph-tick-label {
+  padding: 1px 8px 0 10px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+.pfgraph-tick-line {
+  position: absolute;
+  left: 100%;
+  width: 100vw;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pfgraph-lanes-wrap {
+  position: relative;
+  overflow-x: auto;
+}
+
+.pfgraph-lane-heads {
+  position: sticky;
+  top: 0;
+  display: flex;
+  gap: 0;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  z-index: 3;
+  min-width: fit-content;
+}
+.pfgraph-lane-head {
+  flex: 1 0 132px;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  border-right: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.pfgraph-lane-head-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.pfgraph-lane-head-count {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.pfgraph-grid {
+  position: relative;
+  background:
+    linear-gradient(to right, rgba(122, 162, 247, 0.04) 1px, transparent 1px) 0 0 / calc(100% / var(--lane-count, 1)) 100%,
+    radial-gradient(circle, rgba(242, 178, 99, 0.22) 0.5px, transparent 1px) 0 0 / 64px 40px,
+    var(--bg-deep);
+  min-width: fit-content;
+}
+
+.pfgraph-lane {
+  position: absolute;
+  top: 0; bottom: 0;
+  min-width: 132px;
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.pfgraph-bar {
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  min-height: 10px;
+  border-radius: 3px;
+  opacity: 0.85;
+  cursor: default;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3) inset;
+  transition: opacity 140ms ease, transform 160ms ease;
+}
+.pfgraph-bar:hover {
+  opacity: 1;
+  transform: translateX(-1px) scale(1.02);
+  z-index: 2;
+}
+.pfgraph-bar.is-running {
+  animation: graphBarPulse 1.6s ease-in-out infinite;
+}
+@keyframes graphBarPulse {
+  0%, 100% { opacity: 0.92; }
+  50%      { opacity: 0.6; }
+}
+.pfgraph-bar-tag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  color: rgba(7, 9, 12, 0.82);
+  font-weight: 600;
+  mix-blend-mode: normal;
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.25);
+  white-space: nowrap;
+  pointer-events: none;
+}
+.pfgraph-bar-pulse {
+  position: absolute;
+  bottom: 4px; left: 50%;
+  transform: translateX(-50%);
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+  animation: heartbeat 1s ease-in-out infinite;
+}
+
+.pfgraph-parallel-band {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: repeating-linear-gradient(-45deg, rgba(242, 178, 99, 0.05) 0 6px, transparent 6px 14px);
+  border-top: 1px dashed rgba(242, 178, 99, 0.32);
+  border-bottom: 1px dashed rgba(242, 178, 99, 0.28);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.pfgraph-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  border: 1px dashed var(--border);
+}
+.pfgraph-empty p { margin: 0; max-width: 420px; line-height: 1.7; }
+.pfgraph-empty code { color: var(--accent); }
+.pfgraph-empty-rule {
+  width: 40px;
+  height: 1px;
+  background: var(--phosphor);
+  opacity: 0.6;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 1fr 300px;
@@ -876,8 +1654,8 @@ table.sessions tr:hover { background: var(--panel-2); }
 
 .progress-dashboard {
   display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: 26px;
+  grid-template-columns: 164px 1fr;
+  gap: 22px;
   align-items: center;
 }
 
@@ -887,22 +1665,20 @@ table.sessions tr:hover { background: var(--panel-2); }
 
 .dial-frame {
   position: relative;
-  width: 200px;
-  height: 200px;
-  padding: 16px;
+  width: 164px;
+  height: 164px;
+  padding: 12px;
   border: 1px solid var(--border);
-  background:
-    radial-gradient(circle at 50% 50%, rgba(124, 231, 207, 0.04), transparent 65%),
-    var(--bg-deep);
-  border-radius: 4px;
+  background: var(--bg-deep);
+  border-radius: 3px;
 }
 
 .dial-tick {
   position: absolute;
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--signal);
-  opacity: 0.7;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--border-strong);
+  opacity: 0.5;
 }
 .dial-tick-tl { top: -1px;    left: -1px;   border-right: none; border-bottom: none; }
 .dial-tick-tr { top: -1px;    right: -1px;  border-left: none;  border-bottom: none; }
@@ -911,24 +1687,23 @@ table.sessions tr:hover { background: var(--panel-2); }
 
 .dial {
   position: relative;
-  width: 168px;
-  height: 168px;
+  width: 140px;
+  height: 140px;
 }
 
 .dial-svg { display: block; }
 
 .dial-track {
-  stroke: rgba(122, 162, 247, 0.08);
+  stroke: rgba(255, 255, 255, 0.04);
 }
 
 .dial-progress {
-  filter: drop-shadow(0 0 8px rgba(124, 231, 207, 0.35));
   transition: stroke-dashoffset 450ms cubic-bezier(0.33, 1, 0.68, 1);
 }
 
-.dial-ticks line { stroke: rgba(180, 196, 214, 0.2); }
-.dial-ticks.live line:nth-child(-n+12) { stroke: rgba(242, 178, 99, 0.5); }
-.dial-ticks.done line { stroke: rgba(124, 231, 207, 0.35); }
+.dial-ticks line { stroke: rgba(180, 196, 214, 0.08); }
+.dial-ticks.live line:nth-child(12n+1) { stroke: rgba(242, 178, 99, 0.28); }
+.dial-ticks.done line:nth-child(12n+1) { stroke: rgba(124, 231, 207, 0.22); }
 
 .dial-readout {
   position: absolute;
@@ -952,31 +1727,45 @@ table.sessions tr:hover { background: var(--panel-2); }
 }
 
 .dial-value {
-  font-size: 60px;
-  font-weight: 600;
-  letter-spacing: -0.03em;
+  font-size: 40px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  background: linear-gradient(180deg, #ffeccb, #f2b263 70%);
-  -webkit-background-clip: text;
-          background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--text);
 }
 
 .dial-unit {
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 400;
-  color: var(--muted-strong);
+  color: var(--muted);
   letter-spacing: 0;
 }
 
 .dial-caption {
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 8px;
   text-transform: uppercase;
-  letter-spacing: 0.32em;
+  letter-spacing: 0.28em;
   color: var(--muted);
   margin-top: 2px;
 }
+
+/* State-driven dial tint — single context-appropriate color, no gradient */
+.dial-frame.dial-live .dial-progress { stroke: var(--signal); }
+.dial-frame.dial-live .dial-value    { color: var(--signal); }
+.dial-frame.dial-live .dial-tick     { border-color: var(--signal-dim); opacity: 0.7; }
+
+.dial-frame.dial-done .dial-progress { stroke: var(--phosphor); opacity: 0.85; }
+.dial-frame.dial-done .dial-value    { color: var(--phosphor); }
+.dial-frame.dial-done .dial-tick     { border-color: var(--phosphor-dim); opacity: 0.6; }
+
+.dial-frame.dial-awaits .dial-progress { stroke: var(--warn); }
+.dial-frame.dial-awaits .dial-value    { color: var(--warn); }
+
+.dial-frame.dial-failed .dial-progress { stroke: var(--err); }
+.dial-frame.dial-failed .dial-value    { color: var(--err); }
+
+.dial-frame.dial-idle .dial-progress { stroke: var(--muted); opacity: 0.5; }
 
 .progress-readout {
   display: flex;
@@ -1664,14 +2453,21 @@ table.sessions tr:hover { background: var(--panel-2); }
   font-size: 12px;
 }
 
+/* The row itself is a plain block so the expanded content
+   (event-detail, file-change) naturally claims full width. Grid is applied
+   only to the summary line. */
 .event-row {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.event-row .row-summary {
   display: grid;
   grid-template-columns: 80px 150px 150px 1fr;
   gap: 12px;
   padding: 7px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   align-items: baseline;
+  list-style: none;
 }
+.event-row .row-summary::-webkit-details-marker { display: none; }
 
 .agent-badge {
   display: inline-block;
@@ -1687,7 +2483,7 @@ table.sessions tr:hover { background: var(--panel-2); }
   letter-spacing: 0.02em;
 }
 
-.event-row:hover { background: var(--panel-2); }
+.event-row .row-summary:hover { background: var(--panel-2); }
 
 .event-row .ts { color: var(--muted); font-size: 11px; }
 .event-row .type { font-weight: 500; }
@@ -1712,8 +2508,7 @@ table.sessions tr:hover { background: var(--panel-2); }
   cursor: pointer;
   list-style: none;
 }
-.event-row summary::-webkit-details-marker { display: none; }
-.event-row details[open] .payload {
+.event-row[open] .row-summary .payload {
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -1913,7 +2708,6 @@ table.sessions tr:hover { background: var(--panel-2); }
 /* Event detail (expanded payload)                                     */
 /* ------------------------------------------------------------------ */
 .event-detail {
-  grid-column: 1 / -1;
   background: var(--panel-2);
   border-top: 1px solid var(--border);
   padding: 0;
@@ -2183,9 +2977,13 @@ table.sessions tr:hover { background: var(--panel-2); }
 }
 
 .file-change {
-  grid-column: 1 / -1;
   background: var(--panel-2);
   border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.file-preview {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .file-head {

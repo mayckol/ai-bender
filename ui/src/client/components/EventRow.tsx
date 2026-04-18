@@ -16,7 +16,7 @@ export function EventRow({ event }: Props) {
 
   return (
     <details class="event-row" data-agent={agent}>
-      <summary class="row-summary" style={{ display: 'contents' }}>
+      <summary class="row-summary">
         <span class="ts">{ts}</span>
         <span class="agent-badge" style={{ background: `${color}20`, color, borderColor: `${color}44` }}>
           {agent}
