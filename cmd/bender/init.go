@@ -12,10 +12,13 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"golang.org/x/term"
+
 	"github.com/mayckol/ai-bender/internal/catalog"
 	"github.com/mayckol/ai-bender/internal/constitution"
 	"github.com/mayckol/ai-bender/internal/discovery"
 	"github.com/mayckol/ai-bender/internal/selection"
+	"github.com/mayckol/ai-bender/internal/ui"
 	"github.com/mayckol/ai-bender/internal/workspace"
 )
 
@@ -28,12 +31,11 @@ type initOpts struct {
 }
 
 // Exit code conventions (documented in contracts/cli.md):
-//   1 = generic failure
+//   1 = generic failure (cobra default; not referenced explicitly)
 //   2 = user error (unknown id, mandatory deselection, contradictory flags)
 //   3 = dependency break; caller can retry with --force to cascade
 //   4 = pipeline.yaml conflict with user edits
 const (
-	exitGeneric  = 1
 	exitUserErr  = 2
 	exitDepBreak = 3
 	exitConflict = 4
@@ -111,6 +113,20 @@ func runInit(out, errw io.Writer, _ *globalFlags, o *initOpts) error {
 		return &typedError{code: exitUserErr, err: fmt.Errorf("init: %w", err)}
 	}
 
+	// TTY branch: no selection flags passed and stdin is a terminal →
+	// show the interactive checkbox form. Flags bypass the prompt (FR-005a).
+	if len(o.with) == 0 && len(o.without) == 0 && !o.noInteractive && term.IsTerminal(int(os.Stdin.Fd())) {
+		form := ui.NewForm()
+		out, err := form.Run(ui.FormInput{Catalog: cat, Baseline: sel})
+		if err != nil {
+			if errors.Is(err, ui.ErrCancelled) {
+				os.Exit(130)
+			}
+			return fmt.Errorf("init: form: %w", err)
+		}
+		sel = out.Selection
+	}
+
 	breaks := catalog.DetectBreaks(cat, sel)
 	if len(breaks) > 0 && !o.force {
 		msg := formatBreaks(breaks)
@@ -130,6 +146,10 @@ func runInit(out, errw io.Writer, _ *globalFlags, o *initOpts) error {
 		Selection:   sel,
 	})
 	if err != nil {
+		var pce *workspace.PipelineConflictError
+		if errors.As(err, &pce) {
+			return &typedError{code: exitConflict, err: fmt.Errorf("init: %w", pce)}
+		}
 		return fmt.Errorf("init: scaffold: %w", err)
 	}
 
