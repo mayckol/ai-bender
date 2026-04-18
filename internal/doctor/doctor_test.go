@@ -24,12 +24,13 @@ func TestRun_HealthyOnEmbeddedDefaultsOnly(t *testing.T) {
 		}
 		t.Fatalf("expected no errors on default catalog; got %v", msgs)
 	}
-	// Lean catalog: 7 slash commands + 20 worker skills (2 per agent × 10 agents).
-	if r.SkillCount < 25 || r.SkillCount > 31 {
-		t.Errorf("expected default skill count in [25, 31], got %d", r.SkillCount)
+	// Lean catalog: 7 slash commands + worker skills across 11 agents
+	// (mistakeinator contributes 1 skill; every other agent contributes 1–4).
+	if r.SkillCount < 25 || r.SkillCount > 32 {
+		t.Errorf("expected default skill count in [25, 32], got %d", r.SkillCount)
 	}
-	if r.AgentCount != 10 {
-		t.Errorf("expected 10 agents loaded, got %d", r.AgentCount)
+	if r.AgentCount != 11 {
+		t.Errorf("expected 11 agents loaded, got %d", r.AgentCount)
 	}
 	if r.GroupCount < 2 {
 		t.Errorf("expected ≥2 groups loaded, got %d", r.GroupCount)

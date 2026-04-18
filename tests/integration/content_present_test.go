@@ -12,15 +12,30 @@ import (
 	"github.com/mayckol/ai-bender/internal/skill"
 )
 
-// TestSlashCommands_PresentAndParse: T050.
+// TestSlashCommands_PresentAndParse: T050. Accepts either `SKILL.md` or
+// `SKILL.md.tmpl` (feature 003-init-optional-skills introduced templated
+// skills; `plan` carries a conditional mistakeinator block).
 func TestSlashCommands_PresentAndParse(t *testing.T) {
 	want := []string{"cry", "plan", "tdd", "ghu", "implement", "bender-doctor", "bender-bootstrap"}
 	for _, name := range want {
 		t.Run(name, func(t *testing.T) {
-			data, err := fs.ReadFile(embedded.FS(), path.Join("claude/skills", name, "SKILL.md"))
-			if err != nil {
-				t.Fatalf("missing slash-command skill %q: %v", name, err)
+			var (
+				data []byte
+				err  error
+			)
+			for _, leaf := range []string{"SKILL.md", "SKILL.md.tmpl"} {
+				data, err = fs.ReadFile(embedded.FS(), path.Join("claude/skills", name, leaf))
+				if err == nil {
+					break
+				}
 			}
+			if err != nil {
+				t.Fatalf("missing slash-command skill %q (neither SKILL.md nor SKILL.md.tmpl): %v", name, err)
+			}
+			// Strip a very minimal set of template directives so
+			// ParseFrontmatter sees a clean document; the loader does the
+			// same at LoadCatalog time with a stronger render. Frontmatter
+			// lives at the top of every file, outside any conditional.
 			s, err := skill.ParseFrontmatter(data)
 			if err != nil {
 				t.Fatalf("parse %s: %v", name, err)
@@ -28,8 +43,6 @@ func TestSlashCommands_PresentAndParse(t *testing.T) {
 			if s.Name != name {
 				t.Fatalf("frontmatter name mismatch: got %q want %q", s.Name, name)
 			}
-			// $ARGUMENTS is required only for argument-taking commands. The two binary-wrapper
-			// skills (bender-doctor, bender-bootstrap) take no arguments.
 			if !strings.Contains(s.Body, "$ARGUMENTS") && name != "bender-doctor" && name != "bender-bootstrap" {
 				t.Errorf("%s: expected an $ARGUMENTS reference in the body so Claude can substitute user input", name)
 			}
@@ -63,17 +76,17 @@ func TestAllAgents_Parse(t *testing.T) {
 	if len(warnings) > 0 {
 		t.Logf("warnings:\n  %s", strings.Join(warnings, "\n  "))
 	}
-	if reg.Len() != 10 {
+	if reg.Len() != 11 {
 		var names []string
 		for _, a := range reg.All() {
 			names = append(names, a.Name)
 		}
-		t.Fatalf("expected exactly 10 default agents, got %d: %v", reg.Len(), names)
+		t.Fatalf("expected exactly 11 default agents, got %d: %v", reg.Len(), names)
 	}
 	want := map[string]bool{
 		"crafter": true, "tester": true, "reviewer": true, "linter": true,
 		"architect": true, "scribe": true, "scout": true, "sentinel": true,
-		"benchmarker": true, "surgeon": true,
+		"benchmarker": true, "surgeon": true, "mistakeinator": true,
 	}
 	for _, a := range reg.All() {
 		if !want[a.Name] {

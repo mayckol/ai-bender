@@ -3,6 +3,7 @@
 package integration_test
 
 import (
+	"bytes"
 	"io"
 	"os"
 	"os/exec"
@@ -92,6 +93,29 @@ func runBenderEnv(tb testing.TB, bin, dir string, extraEnv []string, args ...str
 	cmd.Env = append(os.Environ(), extraEnv...)
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+// runBenderExit runs the binary and returns stdout, stderr, and the exit
+// code separately — required by tests that assert typed exit codes from
+// the CLI (init's user-error / dependency / pipeline-conflict paths).
+func runBenderExit(tb testing.TB, bin, dir string, args ...string) (stdout, stderr string, exitCode int) {
+	tb.Helper()
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "XDG_CONFIG_HOME="+tb.TempDir())
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	exitCode = 0
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok {
+			exitCode = ee.ExitCode()
+		} else {
+			tb.Fatalf("run bender: %v (stderr: %s)", err, errBuf.String())
+		}
+	}
+	return outBuf.String(), errBuf.String(), exitCode
 }
 
 func mkNamedProject(tb testing.TB, name string) string {

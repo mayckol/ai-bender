@@ -116,9 +116,21 @@ nodes:
     agent: scribe
     skill: bg-scribe-update-docs
     depends_on: [reviewer, sentinel, benchmarker]
+    depends_mode: any-resolved
+    priority: 50
+
+  # Mistakeinator runs in parallel with scribe after the review trio; never
+  # blocks the main flow (halt_on_failure defaults to false). Deselecting
+  # mistakeinator prunes this node entirely.
+  - id: mistakeinator
+    agent: mistakeinator
+    skill: bg-mistakeinator-record
+    depends_on: [reviewer, sentinel, benchmarker]
+    depends_mode: any-resolved
     priority: 50
 
   - id: report
     type: orchestrator
-    depends_on: [scribe]
+    depends_on: [scribe, mistakeinator]
+    depends_mode: any-resolved
     priority: 10
