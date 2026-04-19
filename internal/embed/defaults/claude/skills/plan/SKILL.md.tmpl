@@ -92,6 +92,52 @@ Ordering rule:
    - Append `artifact_written` for the spec immediately after.
    - Append `skill_completed` for `spec_draft` immediately after.
 
+3a. **Clarification scan** (feature 006-plan-clarifications):
+   - Re-read the just-written spec draft and scan it (plus the source
+     capture) for unresolved decision points using the fixed taxonomy
+     `scope | actors_roles | data_model | non_functional |
+     security_privacy | integration_boundary`. Anchor on
+     `[NEEDS CLARIFICATION: …]` markers in the spec body and on bare or
+     conflicting requirements that have no defaulted answer.
+   - Cap the question batch at **3** items, prioritized by impact
+     (`scope > security/privacy > UX > technical detail`). Items beyond
+     the cap are recorded under `## Deferred (capped)` in the artifact —
+     do not silently drop them.
+   - For each question, generate 3–4 multiple-choice answers with one
+     `Implication` sentence each. Skip the synthetic `Custom` and `Skip`
+     entries — those are appended by the renderer.
+   - Build a `Batch` JSON document with `Questions` (no Resolutions yet),
+     using the same `<timestamp>` as the rest of the plan set, and pipe
+     it into the `bender clarify` subcommand:
+     ```bash
+     bender clarify \
+       --timestamp <timestamp> \
+       --from-spec  .bender/artifacts/specs/<slug>-<timestamp>.md \
+       --from-capture .bender/artifacts/cry/<slug>-<ts>.md \
+       --session-dir .bender/sessions/<id> \
+       --out .bender/artifacts/plan/clarifications-<timestamp>.md \
+       < /tmp/batch.json
+     ```
+     The subcommand handles event emission, prompt rendering, reuse,
+     spec rewrite, and (in non-interactive mode) pending entries. Do
+     **not** open `huh` forms or write to events.jsonl yourself for
+     clarification events — `bender clarify` owns those.
+   - When the batch contains zero questions (nothing detected), skip
+     this whole sub-step entirely. **Do not** invoke `bender clarify`
+     and do not emit any clarification events (FR-013).
+   - If `bender clarify` exits non-zero, halt the plan flow:
+     - exit code 2 → non-interactive strict mode left pending entries.
+       Update `state.json` to `status: awaiting_clarification` (it is
+       already set by the binary; verify) and emit `session_completed`
+       with `payload.status: "awaiting_clarification"` instead of
+       `awaiting_confirm`.
+     - any other non-zero → treat as a stage failure: emit
+       `stage_failed` and `session_completed` with `payload.status:
+       "failed"`.
+   - On success, the spec draft has been rewritten in place and the
+     clarifications artifact has been persisted alongside the rest of
+     the plan set under the same `<timestamp>`.
+
 4. **Data model**:
    - Append `skill_invoked` for `data_model`.
    - Write `.bender/artifacts/plan/data-model-<timestamp>.md` (entities,

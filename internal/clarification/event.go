@@ -33,9 +33,15 @@ func BuildEvent(kind event.Type, b Batch, sessionID, artifactPath string) (event
 	skipped := b.SkippedCount()
 	deferred := b.DeferredCount()
 	total := len(b.Questions)
-	if resolved+pending+skipped+deferred != total {
-		return event.Event{}, fmt.Errorf("clarification: counter sum (%d) != question count (%d)",
-			resolved+pending+skipped+deferred, total)
+
+	// `clarifications_requested` fires BEFORE the prompt — counters are
+	// 0/0/0/0 by definition, only `total` is meaningful. Resolved/Pending
+	// signal a terminal batch state and must satisfy the sum invariant.
+	if kind != event.TypeClarificationsRequested {
+		if resolved+pending+skipped+deferred != total {
+			return event.Event{}, fmt.Errorf("clarification: counter sum (%d) != question count (%d)",
+				resolved+pending+skipped+deferred, total)
+		}
 	}
 
 	if kind == event.TypeClarificationsResolved && pending > 0 {
