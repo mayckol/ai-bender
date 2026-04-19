@@ -266,6 +266,81 @@ Behavior:
 | 50 | `<id>` not found (single-id form) |
 | 73 | Neither `<id>` nor `--all` supplied |
 
+#### `bender worktree` — isolated pipeline runs
+
+Every bender pipeline session now runs inside its own **git worktree** on its own session branch (`bender/session/<id>`). The main working tree is never written to by bender itself — your uncommitted edits, running dev server, and file watchers are untouched while a session is in flight, and two sessions can run against the same repo in parallel without colliding.
+
+Worktree isolation is **mandatory** — there is no in-place / legacy mode. When git is unavailable, the repo is bare, or the repo is mid-rebase/merge/cherry-pick, bender refuses to start a session with a specific error rather than falling back to the main tree.
+
+**Default layout:**
+
+```text
+<repo>/
+├── .bender/
+│   ├── worktrees/<session-id>/     # the session's worktree (gitignored)
+│   └── sessions/<session-id>/      # state.json + events.jsonl
+└── … your normal project …
+```
+
+Override the worktree root via `.bender/config.yaml`:
+
+```yaml
+worktree:
+  root: ../bender-worktrees   # relative to repo root, or an absolute path
+```
+
+**Subcommands:**
+
+```bash
+# Start a session's worktree (orchestrator skills call this at session start;
+# you can call it directly to inspect the behaviour).
+bender worktree create <session-id> [--base-branch=main]
+#   worktree: /repo/.bender/worktrees/<session-id>
+#   branch:   bender/session/<session-id>
+
+# See what's live, what's been cleaned up, and what drifted.
+bender worktree list [--json]
+
+# Tear down one session's worktree — keeps the session branch and event history.
+bender worktree remove <session-id> [--force]
+
+# Bulk-clean every completed/aborted session worktree.
+bender worktree prune [--older-than=72h]
+```
+
+| Exit | Meaning |
+|---|---|
+| 0 | Success |
+| 10 | Git unavailable or repo is bare / not a git repo |
+| 11 | Repo is mid-rebase / mid-merge / mid-cherry-pick |
+| 12 | Configured worktree root violates placement constraints |
+| 13 | Session branch `bender/session/<id>` already exists |
+| 20 | `remove`/`pr`: session does not exist |
+| 21 | `remove`: refused to act on an active session |
+
+Every binary verb has a Bash + PowerShell fallback under `.specify/extensions/worktree/scripts/{bash,powershell}/worktree.sh` (`.ps1`) with matching exit codes, so environments without the Go binary can perform the same operations.
+
+See `specs/004-worktree-flow/quickstart.md` for the walkthrough.
+
+#### `bender sessions pr <session-id>` — optional pull request (opt-in)
+
+After a session completes, push its branch and open a PR — only when you explicitly ask for it. Bender never pushes, never creates a PR, and never mutates any remote on its own.
+
+```bash
+bender sessions pr <session-id> [--draft] [--refuse-update] [--json]
+```
+
+Uses your locally installed platform CLI (`gh` for `github.com` remotes; `glab` stubbed for v1 and targeting a future release). The PR body is pre-populated from the session's summary artefact; the platform CLI's normal interactive flow lets you edit before submitting. Re-running the command refreshes the PR description and pushes new commits rather than opening a duplicate (use `--refuse-update` to get exit code 33 instead).
+
+PR state is **snapshotted at invocation time** — `bender sessions list` shows what was true when you ran the command. Use `gh pr view <url>` (or your platform equivalent) for live state.
+
+| Exit | Meaning |
+|---|---|
+| 30 | Session not eligible (still active / zero commits) |
+| 31 | No adapter matches the configured remote |
+| 32 | Push or adapter call failed |
+| 33 | Refused to update an existing PR under `--refuse-update` |
+
 #### `bender update [--check]`
 
 Replace the current `bender` binary with the latest release. With `--check`, only print the available version without modifying anything.

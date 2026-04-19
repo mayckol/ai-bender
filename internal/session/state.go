@@ -9,20 +9,56 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"time"
 )
 
-// SchemaVersion is the current state.json schema version.
-const SchemaVersion = 1
+// SchemaVersion is the latest state.json schema version accepted by new writers.
+// v1 files continue to load — validateState accepts both 1 and 2.
+const SchemaVersion = 2
 
-// State mirrors the on-disk state.json snapshot per `contracts/session.md`.
+// WorktreeStatus tracks the lifecycle of the per-session worktree directory.
+type WorktreeStatus string
+
+const (
+	WorktreeActive    WorktreeStatus = "active"
+	WorktreeCompleted WorktreeStatus = "completed"
+	WorktreeAborted   WorktreeStatus = "aborted"
+	WorktreeRemoved   WorktreeStatus = "removed"
+	WorktreeMissing   WorktreeStatus = "missing"
+)
+
+// Worktree describes the per-session git worktree materialised at session start.
+// Populated for v2 sessions only; v1 sessions load with a zero Worktree value
+// and are surfaced by callers as "legacy" via State.IsLegacy.
+type Worktree struct {
+	Path      string         `json:"path"`
+	Status    WorktreeStatus `json:"status"`
+	CreatedAt time.Time      `json:"created_at"`
+	RemovedAt *time.Time     `json:"removed_at,omitempty"`
+}
+
+// PullRequest is the optional snapshot recorded when the user invokes
+// `bender session pr <id>`. Absent until the first successful invocation.
+// Bender never polls the platform to refresh fields here; LastInvokedAt is
+// updated on every successful re-invocation (the PR body is refreshed),
+// OpenedAt is immutable.
+type PullRequest struct {
+	Remote         string    `json:"remote"`
+	RemoteURL      string    `json:"remote_url"`
+	BranchOnRemote string    `json:"branch_on_remote"`
+	URL            string    `json:"pr_url"`
+	OpenedAt       time.Time `json:"opened_at"`
+	LastInvokedAt  time.Time `json:"last_invoked_at,omitzero"`
+	Adapter        string    `json:"adapter"`
+}
+
+// State mirrors the on-disk state.json snapshot.
 //
-// CompletedAt is set once the session reaches a terminal-ish status
-// (awaiting_confirm | completed | failed). `awaiting_confirm` means the draft
-// produced its artifacts but the stage is still pending the user's `/<stage>
-// confirm` approval run — its events.jsonl is frozen. When CompletedAt is
-// present, `bender sessions list` uses it (rather than the last event
-// timestamp) as the authoritative end time for the duration column.
+// v1 fields remain unchanged. v2 adds Worktree, SessionBranch, BaseBranch,
+// BaseSHA, and the optional PullRequest. v1 files load cleanly into v2 with
+// zero-valued new fields; callers check SchemaVersion or IsLegacy when they
+// need to distinguish modes.
 type State struct {
 	SchemaVersion   int       `json:"schema_version"`
 	SessionID       string    `json:"session_id"`
@@ -34,14 +70,30 @@ type State struct {
 	SkillsInvoked   []string  `json:"skills_invoked,omitempty"`
 	FilesChanged    int       `json:"files_changed,omitempty"`
 	FindingsCount   int       `json:"findings_count,omitempty"`
+
+	Worktree      Worktree     `json:"worktree,omitzero"`
+	SessionBranch string       `json:"session_branch,omitempty"`
+	BaseBranch    string       `json:"base_branch,omitempty"`
+	BaseSHA       string       `json:"base_sha,omitempty"`
+	PullRequest   *PullRequest `json:"pull_request,omitempty"`
 }
 
 // ErrNoState is returned when state.json is missing from a session directory.
 var ErrNoState = errors.New("session: state.json not found")
 
-// LoadState reads and parses state.json from sessionDir.
+// IsLegacy reports whether this state was loaded from a v1 state.json (no
+// worktree metadata). UI surfaces use this to label rows; cleanup code skips
+// legacy sessions because there is nothing on disk to remove.
+func (s *State) IsLegacy() bool {
+	return s.SchemaVersion < 2 || s.Worktree.Path == ""
+}
+
+// LoadState reads and parses state.json from sessionDir. It is intentionally
+// permissive — it performs no version rejection and no field-presence checks
+// beyond what Go's JSON unmarshal already enforces. Callers that need strict
+// validation use Validate.
 func LoadState(sessionDir string) (*State, error) {
-	data, err := os.ReadFile(sessionDir + "/state.json")
+	data, err := os.ReadFile(filepath.Join(sessionDir, "state.json"))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, ErrNoState
@@ -53,4 +105,27 @@ func LoadState(sessionDir string) (*State, error) {
 		return nil, fmt.Errorf("session: parse state: %w", err)
 	}
 	return &s, nil
+}
+
+// SaveState atomically writes state.json to sessionDir via temp-file + rename.
+// Creates sessionDir if it does not exist. Used by bender's Go-side writers
+// (e.g. `bender worktree remove` recording the removed_at timestamp).
+func SaveState(sessionDir string, s *State) error {
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		return fmt.Errorf("session: mkdir session dir: %w", err)
+	}
+	data, err := json.MarshalIndent(s, "", "  ")
+	if err != nil {
+		return fmt.Errorf("session: marshal state: %w", err)
+	}
+	data = append(data, '\n')
+	tmp := filepath.Join(sessionDir, "state.json.tmp")
+	final := filepath.Join(sessionDir, "state.json")
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("session: write temp state: %w", err)
+	}
+	if err := os.Rename(tmp, final); err != nil {
+		return fmt.Errorf("session: rename state: %w", err)
+	}
+	return nil
 }

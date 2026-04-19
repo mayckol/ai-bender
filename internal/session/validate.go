@@ -109,10 +109,14 @@ func Validate(sessionDir string) ([]Violation, error) {
 
 // validateState returns the list of required-field messages for state.json.
 // Kept separate so it can be unit-tested without touching disk.
+//
+// Both schema_version 1 and schema_version 2 are accepted. v2 additionally
+// requires the worktree/session_branch/base_branch/base_sha quartet; v1 has
+// no such requirement (legacy sessions predate worktree isolation).
 func validateState(s *State) []string {
 	var msgs []string
-	if s.SchemaVersion != SchemaVersion {
-		msgs = append(msgs, fmt.Sprintf("schema_version=%d (want %d)", s.SchemaVersion, SchemaVersion))
+	if s.SchemaVersion != 1 && s.SchemaVersion != SchemaVersion {
+		msgs = append(msgs, fmt.Sprintf("schema_version=%d (want 1 or %d)", s.SchemaVersion, SchemaVersion))
 	}
 	if s.SessionID == "" {
 		msgs = append(msgs, "session_id is required")
@@ -130,6 +134,20 @@ func validateState(s *State) []string {
 	}
 	if (s.Status == "awaiting_confirm" || s.Status == "completed" || s.Status == "failed") && s.CompletedAt.IsZero() {
 		msgs = append(msgs, fmt.Sprintf("completed_at is required when status=%q", s.Status))
+	}
+	if s.SchemaVersion == SchemaVersion {
+		if s.Worktree.Path == "" {
+			msgs = append(msgs, "worktree.path is required for schema_version=2")
+		}
+		if s.SessionBranch == "" {
+			msgs = append(msgs, "session_branch is required for schema_version=2")
+		}
+		if s.BaseBranch == "" {
+			msgs = append(msgs, "base_branch is required for schema_version=2")
+		}
+		if s.BaseSHA == "" {
+			msgs = append(msgs, "base_sha is required for schema_version=2")
+		}
 	}
 	return msgs
 }

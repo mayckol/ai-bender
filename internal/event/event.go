@@ -39,25 +39,34 @@ type Actor struct {
 type Type string
 
 const (
-	TypeSessionStarted    Type = "session_started"
-	TypeStageStarted      Type = "stage_started"
-	TypeStageCompleted    Type = "stage_completed"
-	TypeStageFailed       Type = "stage_failed"
-	TypeOrchDecision      Type = "orchestrator_decision"
-	TypeOrchProgress      Type = "orchestrator_progress"
-	TypeAgentStarted      Type = "agent_started"
-	TypeAgentCompleted    Type = "agent_completed"
-	TypeAgentFailed       Type = "agent_failed"
-	TypeAgentBlocked      Type = "agent_blocked"
-	TypeAgentProgress     Type = "agent_progress"
-	TypeAgentLog          Type = "agent_log"
-	TypeSkillInvoked      Type = "skill_invoked"
-	TypeSkillCompleted    Type = "skill_completed"
-	TypeSkillFailed       Type = "skill_failed"
-	TypeArtifactWritten   Type = "artifact_written"
-	TypeFileChanged       Type = "file_changed"
-	TypeFindingReported   Type = "finding_reported"
-	TypeSessionCompleted  Type = "session_completed"
+	TypeSessionStarted   Type = "session_started"
+	TypeStageStarted     Type = "stage_started"
+	TypeStageCompleted   Type = "stage_completed"
+	TypeStageFailed      Type = "stage_failed"
+	TypeOrchDecision     Type = "orchestrator_decision"
+	TypeOrchProgress     Type = "orchestrator_progress"
+	TypeAgentStarted     Type = "agent_started"
+	TypeAgentCompleted   Type = "agent_completed"
+	TypeAgentFailed      Type = "agent_failed"
+	TypeAgentBlocked     Type = "agent_blocked"
+	TypeAgentProgress    Type = "agent_progress"
+	TypeAgentLog         Type = "agent_log"
+	TypeSkillInvoked     Type = "skill_invoked"
+	TypeSkillCompleted   Type = "skill_completed"
+	TypeSkillFailed      Type = "skill_failed"
+	TypeArtifactWritten  Type = "artifact_written"
+	TypeFileChanged      Type = "file_changed"
+	TypeFindingReported  Type = "finding_reported"
+	TypeSessionCompleted Type = "session_completed"
+
+	// Worktree lifecycle kinds added for feature 004-worktree-flow.
+	TypeWorktreeCreated Type = "worktree_created"
+	TypeWorktreeRemoved Type = "worktree_removed"
+	TypeWorktreeMissing Type = "worktree_missing"
+
+	// Optional pull-request kinds added for feature 004-worktree-flow.
+	TypePROpened        Type = "pr_opened"
+	TypePRUpdateRefused Type = "pr_update_refused"
 )
 
 // KnownTypes returns every event type defined in v1.
@@ -72,6 +81,8 @@ func KnownTypes() []Type {
 		TypeArtifactWritten, TypeFileChanged,
 		TypeFindingReported,
 		TypeSessionCompleted,
+		TypeWorktreeCreated, TypeWorktreeRemoved, TypeWorktreeMissing,
+		TypePROpened, TypePRUpdateRefused,
 	}
 }
 

@@ -28,6 +28,12 @@ var requiredPayloadFields = map[Type][]string{
 	TypeFileChanged:      {"path", "lines_added", "lines_removed", "agent"},
 	TypeFindingReported:  {"finding_id", "severity", "category", "title"},
 	TypeSessionCompleted: {"status", "duration_ms"},
+
+	TypeWorktreeCreated: {"path", "branch", "base_branch", "base_sha"},
+	TypeWorktreeRemoved: {"path", "reason"},
+	TypeWorktreeMissing: {"path"},
+	TypePROpened:        {"remote", "branch_on_remote", "pr_url", "adapter", "opened_at"},
+	TypePRUpdateRefused: {"existing_pr_url"},
 }
 
 // RequiredPayloadFields returns the payload keys that v1 requires for the given event type.

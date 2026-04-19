@@ -29,6 +29,7 @@ func newSessionsCmd(g *globalFlags) *cobra.Command {
 	cmd.AddCommand(newSessionsExportCmd(g))
 	cmd.AddCommand(newSessionsValidateCmd(g))
 	cmd.AddCommand(newSessionsClearCmd(g))
+	cmd.AddCommand(newSessionPRCmd(g))
 	return cmd
 }
 
@@ -172,11 +173,32 @@ func renderSessions(out io.Writer, listings []session.Listing) error {
 		return nil
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tCOMMAND\tSTARTED_AT\tDURATION\tSTATUS\tFILES\tFINDINGS")
+	fmt.Fprintln(w, "ID\tCOMMAND\tSTARTED_AT\tDURATION\tSTATUS\tFILES\tFINDINGS\tWORKTREE\tBRANCH\tPR")
 	for _, l := range listings {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%d\n",
+		worktreeStatus := "legacy"
+		branch := "—"
+		prURL := "—"
+		if !l.State.IsLegacy() {
+			worktreeStatus = string(l.State.Worktree.Status)
+			if l.State.SessionBranch != "" {
+				branch = trimHeadsPrefix(l.State.SessionBranch)
+			}
+		}
+		if l.State.PullRequest != nil {
+			prURL = l.State.PullRequest.URL
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\t%s\t%s\n",
 			l.ID, l.State.Command, l.State.StartedAt.Format("2006-01-02T15:04:05Z"),
-			l.Duration, l.State.Status, l.State.FilesChanged, l.State.FindingsCount)
+			l.Duration, l.State.Status, l.State.FilesChanged, l.State.FindingsCount,
+			worktreeStatus, branch, prURL)
 	}
 	return w.Flush()
+}
+
+func trimHeadsPrefix(ref string) string {
+	const p = "refs/heads/"
+	if len(ref) > len(p) && ref[:len(p)] == p {
+		return ref[len(p):]
+	}
+	return ref
 }

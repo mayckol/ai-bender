@@ -1,0 +1,6 @@
+# bender-managed runtime state — safe to delete, regenerated on demand.
+sessions/
+cache/
+worktrees/
+bender-ui.log
+bender-ui.pid
