@@ -28,17 +28,39 @@ export function responsibleAgent(ev: BenderEvent): string {
   return MAIN_AGENT;
 }
 
+function hashString(s: string): number {
+  let hash = 0;
+  for (let i = 0; i < s.length; i++) hash = (hash * 31 + s.charCodeAt(i)) | 0;
+  return hash;
+}
+
+function hueFromName(name: string): number {
+  return ((hashString(name) % 360) + 360) % 360;
+}
+
 /**
  * Deterministic HSL color for an agent name. Stable across reloads because
  * it hashes the name — the same agent always renders in the same color.
  */
 export function agentColor(name: string): string {
-  let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = (hash * 31 + name.charCodeAt(i)) | 0;
-  }
-  const hue = ((hash % 360) + 360) % 360;
-  return `hsl(${hue}deg 55% 60%)`;
+  return `hsl(${hueFromName(name)}deg 55% 60%)`;
+}
+
+/**
+ * Accent for a single agent × skill invocation. Keeps the agent hue (so the
+ * family identity is preserved) and modulates saturation/lightness by the
+ * skill name — three invocations of the same agent with different skills
+ * read as three distinct shades of the same family instead of a flat stack.
+ */
+export function skillAccent(agent: string, skill?: string | null): string {
+  const hue = hueFromName(agent);
+  if (!skill) return `hsl(${hue}deg 55% 60%)`;
+  const h = hashString(skill);
+  const satShift = ((h & 0xff) % 26) - 13;
+  const litShift = (((h >> 8) & 0xff) % 22) - 9;
+  const sat = Math.max(38, Math.min(76, 55 + satShift));
+  const lit = Math.max(48, Math.min(72, 60 + litShift));
+  return `hsl(${hue}deg ${sat}% ${lit}%)`;
 }
 
 export function distinctAgents(events: BenderEvent[]): string[] {

@@ -24,6 +24,8 @@ export interface FlowNode {
   skill?: string;
   state: NodeState;
   isAnchor?: boolean;
+  isBaseStage?: boolean;
+  sessionId?: string;
   startedAt?: string;
   completedAt?: string;
   waveId: string;
@@ -58,6 +60,86 @@ const ANCHOR_SHIP: FlowNode = {
   waveId: ANCHOR_SHIP_WAVE,
 };
 
+export type BaseStageId = 'cry' | 'plan' | 'tdd';
+
+const BASE_STAGES: BaseStageId[] = ['cry', 'plan', 'tdd'];
+
+export interface BaseStageInfo {
+  state: NodeState;
+  sessionId?: string;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export type BaseStageStates = Record<BaseStageId, BaseStageInfo>;
+
+const EMPTY_BASE_STAGES: BaseStageStates = {
+  cry: { state: 'disabled' },
+  plan: { state: 'disabled' },
+  tdd: { state: 'disabled' },
+};
+
+function commandHead(cmd: string | undefined | null): string {
+  if (!cmd) return '';
+  return cmd.trim().split(/\s+/)[0];
+}
+
+/**
+ * Collapse the session list into one state per base stage. We use the
+ * latest session per command (by id, which is timestamp-prefixed) as the
+ * authoritative record: a running run supersedes a prior completed one.
+ */
+export function pickBaseStageStates(sessions: SessionSummary[]): BaseStageStates {
+  const out: BaseStageStates = {
+    cry: { state: 'disabled' },
+    plan: { state: 'disabled' },
+    tdd: { state: 'disabled' },
+  };
+  const latest = new Map<BaseStageId, SessionSummary>();
+  for (const s of sessions) {
+    const head = commandHead(s.state.command);
+    const id = head.startsWith('/') ? (head.slice(1) as BaseStageId) : null;
+    if (!id || !BASE_STAGES.includes(id)) continue;
+    const prev = latest.get(id);
+    if (!prev || s.id.localeCompare(prev.id) > 0) latest.set(id, s);
+  }
+  for (const [id, s] of latest) {
+    out[id] = {
+      state: stateFromStatus(s.effective_status ?? s.state.status),
+      sessionId: s.id,
+      startedAt: s.state.started_at,
+      completedAt: s.state.completed_at,
+    };
+  }
+  return out;
+}
+
+function stateFromStatus(status: string | undefined): NodeState {
+  switch (status) {
+    case 'running': return 'running';
+    case 'completed':
+    case 'awaiting_confirm': return 'completed';
+    case 'failed': return 'failed';
+    default: return 'disabled';
+  }
+}
+
+function baseStageWave(id: BaseStageId, info: BaseStageInfo): FlowWave {
+  const waveId = `wave-anchor-${id}`;
+  const node: FlowNode = {
+    id: `anchor-${id}`,
+    agent: id,
+    state: info.state,
+    isAnchor: true,
+    isBaseStage: true,
+    sessionId: info.sessionId,
+    startedAt: info.startedAt,
+    completedAt: info.completedAt,
+    waveId,
+  };
+  return { id: waveId, nodes: [node], parallel: false };
+}
+
 export function pickLiveGhu(sessions: SessionSummary[]): SessionSummary | null {
   const ghus = sessions.filter(
     (s) => s.state.command === '/ghu' || s.state.command === '/implement',
@@ -79,6 +161,7 @@ export function buildFlowWaves(
   events: BenderEvent[],
   state: SessionState | null,
   isLive: boolean,
+  baseStages: BaseStageStates = EMPTY_BASE_STAGES,
 ): FlowWave[] {
   const agentWave = new Map<string, string>();
   const waveParallel = new Map<string, boolean>();
@@ -239,7 +322,9 @@ export function buildFlowWaves(
   }
   const shipWave = anchorWave('ship', shipState);
 
-  return [headWave, ...middleWaves, shipWave];
+  const baseWaves = BASE_STAGES.map((id) => baseStageWave(id, baseStages[id]));
+
+  return [...baseWaves, headWave, ...middleWaves, shipWave];
 }
 
 function anchorWave(which: 'crafter' | 'ship', state: NodeState): FlowWave {

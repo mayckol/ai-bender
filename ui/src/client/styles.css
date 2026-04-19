@@ -891,6 +891,46 @@ table.sessions tr:hover { background: var(--panel-2); }
 .pfnode.is-agent-tinted .pfnode-chip.chip-running .pfnode-chip-dot    { background: var(--pfnode-accent); box-shadow: 0 0 8px var(--pfnode-accent); }
 .pfnode.is-agent-tinted .pfnode-chip.chip-completed .pfnode-chip-dot  { background: var(--pfnode-accent); box-shadow: 0 0 6px color-mix(in srgb, var(--pfnode-accent) 40%, transparent); }
 
+/* Base-stage anchors (cry / plan / tdd) — each stage wears its own signature
+   hue even when disabled, so the pipeline reads as a chromatic arc instead
+   of a flat stack of identical green cards. */
+.pfnode.is-base-stage.pfnode-disabled {
+  border-color: color-mix(in srgb, var(--pfnode-accent) 24%, var(--border) 76%);
+  background:
+    repeating-linear-gradient(135deg,
+      color-mix(in srgb, var(--pfnode-accent) 4%, transparent) 0 6px,
+      transparent 6px 12px),
+    color-mix(in srgb, var(--pfnode-accent) 3%, var(--bg-deep) 97%);
+  opacity: 0.88;
+}
+.pfnode.is-base-stage.pfnode-disabled .pfnode-glyph {
+  color: color-mix(in srgb, var(--pfnode-accent) 52%, var(--muted) 48%);
+  opacity: 0.85;
+}
+.pfnode.is-base-stage.pfnode-disabled .pfnode-tick {
+  border-color: color-mix(in srgb, var(--pfnode-accent) 34%, var(--border) 66%);
+  opacity: 0.8;
+}
+.pfnode.is-base-stage.pfnode-disabled .pfnode-name {
+  color: color-mix(in srgb, var(--pfnode-accent) 48%, var(--muted-strong) 52%);
+}
+.pfnode.is-base-stage.pfnode-disabled .pfnode-chip {
+  color: color-mix(in srgb, var(--pfnode-accent) 62%, var(--muted) 38%);
+  border-color: color-mix(in srgb, var(--pfnode-accent) 30%, var(--border) 70%);
+  background: color-mix(in srgb, var(--pfnode-accent) 6%, transparent);
+}
+.pfnode.is-base-stage.pfnode-disabled .pfnode-chip .pfnode-chip-dot {
+  background: color-mix(in srgb, var(--pfnode-accent) 55%, var(--muted) 45%);
+  box-shadow: none;
+}
+
+/* Base-stage ▸ caret should read in the stage's own hue, not the generic
+   signal amber — completes the chromatic arc across the anchor row. */
+.pfnode.is-base-stage.is-anchor .pfnode-name::before {
+  color: var(--pfnode-accent);
+  opacity: 0.65;
+}
+
 /* ------------------------------------------------------------------ */
 /* Hover treatment — disabled while panning so drag doesn't strobe    */
 /* ------------------------------------------------------------------ */

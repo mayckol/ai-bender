@@ -1,11 +1,12 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 
-import { agentColor, responsibleAgent } from '../lib/agents.ts';
+import { agentColor, responsibleAgent, skillAccent } from '../lib/agents.ts';
 import type { BenderEvent, SessionExport, SessionState, SessionSummary } from '../lib/api.ts';
 import {
   buildFlowWaves,
   buildSessionWaves,
+  pickBaseStageStates,
   pickLiveGhu,
   type FlowNode,
   type FlowWave,
@@ -107,7 +108,11 @@ export function LiveProjectFlow({ sessions }: Props) {
         idle: true,
       };
 
-  const waves = useMemo(() => buildFlowWaves(events, state, isLive), [events, state, isLive]);
+  const baseStages = useMemo(() => pickBaseStageStates(sessions), [sessions]);
+  const waves = useMemo(
+    () => buildFlowWaves(events, state, isLive, baseStages),
+    [events, state, isLive, baseStages],
+  );
 
   return (
     <FlowCanvas
@@ -512,15 +517,20 @@ function FlowNodeCard({
   onDive?: (agent: string) => void;
   agentTinted?: boolean;
 }) {
-  const color = node.isAnchor || node.agent === 'ship' ? 'var(--signal)' : agentColor(node.agent);
+  const accent = accentForNode(node, agentTinted);
   const glyph = glyphFor(node);
   // Dive only applies to actual agent nodes that have landed real events
   // (skip the ship anchor; allow crafter even as anchor if it's been seen).
-  const canDive = !!onDive && node.agent !== 'ship' && node.state !== 'disabled';
+  // Base-stage anchors (cry/plan/tdd) link to their own session when known,
+  // not the current /ghu event stream.
+  const canDive = !!onDive && !node.isBaseStage && node.agent !== 'ship' && node.state !== 'disabled';
+  const sessionHref = node.isBaseStage && node.sessionId ? `/sessions/${encodeURIComponent(node.sessionId)}` : null;
+  const tinted = !!agentTinted || !!node.isBaseStage;
+  const applyAccent = node.isBaseStage || tinted || (node.state !== 'disabled' && node.state !== 'failed');
   return (
     <div
-      class={`pfnode pfnode-${node.state}${node.isAnchor ? ' is-anchor' : ''}${dense ? ' is-dense' : ''}${canDive ? ' can-dive' : ''}${agentTinted ? ' is-agent-tinted' : ''}`}
-      style={agentTinted || (node.state !== 'disabled' && node.state !== 'failed') ? { ['--pfnode-accent' as string]: color } : undefined}
+      class={`pfnode pfnode-${node.state}${node.isAnchor ? ' is-anchor' : ''}${node.isBaseStage ? ' is-base-stage' : ''}${dense ? ' is-dense' : ''}${canDive ? ' can-dive' : ''}${tinted ? ' is-agent-tinted' : ''}`}
+      style={applyAccent ? { ['--pfnode-accent' as string]: accent } : undefined}
     >
       <span class="pfnode-tick pfnode-tick-tl" aria-hidden="true" />
       <span class="pfnode-tick pfnode-tick-tr" aria-hidden="true" />
@@ -550,6 +560,19 @@ function FlowNodeCard({
           <span class="pfnode-dive-icon" aria-hidden="true">⤢</span>
           <span class="pfnode-dive-label">dive</span>
         </button>
+      )}
+      {sessionHref && (
+        <a
+          class="pfnode-dive"
+          href={sessionHref}
+          title={`Open /${node.agent} session`}
+          aria-label={`Open /${node.agent} session`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span class="pfnode-dive-icon" aria-hidden="true">⤢</span>
+          <span class="pfnode-dive-label">open</span>
+        </a>
       )}
     </div>
   );
@@ -607,13 +630,35 @@ function chipText(node: FlowNode): string {
     case 'completed': return node.agent === 'ship' ? 'shipped' : 'done';
     case 'failed':    return 'failed';
     case 'blocked':   return 'blocked';
-    case 'disabled':  return node.isAnchor && node.agent === 'ship' ? 'idle' : 'queued';
+    case 'disabled':
+      if (node.isBaseStage) return 'idle';
+      return node.isAnchor && node.agent === 'ship' ? 'idle' : 'queued';
   }
+}
+
+const BASE_STAGE_ACCENTS: Record<string, string> = {
+  cry:  'var(--agent)',    // violet — capture / intent
+  plan: 'var(--stage)',    // azure  — design / blueprint
+  tdd:  'var(--phosphor)', // mint   — tests / verification
+};
+
+function accentForNode(node: FlowNode, agentTinted?: boolean): string {
+  if (node.isBaseStage) {
+    const fixed = BASE_STAGE_ACCENTS[node.agent];
+    if (fixed) return fixed;
+  }
+  if (node.isAnchor || node.agent === 'ship') return 'var(--signal)';
+  // Session-flow variant: differentiate skills inside one agent family.
+  if (agentTinted) return skillAccent(node.agent, node.skill);
+  return agentColor(node.agent);
 }
 
 function glyphFor(node: FlowNode): string {
   if (node.agent === 'ship') return '▲';
   if (node.agent === 'crafter') return '◆';
+  if (node.agent === 'cry') return '◇';
+  if (node.agent === 'plan') return '◈';
+  if (node.agent === 'tdd') return '◉';
   if (node.agent === 'tester') return '◉';
   if (node.agent === 'scout') return '◇';
   if (node.agent === 'architect') return '◈';
