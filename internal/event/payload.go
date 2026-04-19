@@ -34,6 +34,10 @@ var requiredPayloadFields = map[Type][]string{
 	TypeWorktreeMissing: {"path"},
 	TypePROpened:        {"remote", "branch_on_remote", "pr_url", "adapter", "opened_at"},
 	TypePRUpdateRefused: {"existing_pr_url"},
+
+	TypeClarificationsRequested: {"artifact_path", "question_count", "resolved_count", "pending_count", "skipped_count", "deferred_count"},
+	TypeClarificationsResolved:  {"artifact_path", "question_count", "resolved_count", "pending_count", "skipped_count", "deferred_count"},
+	TypeClarificationsPending:   {"artifact_path", "question_count", "resolved_count", "pending_count", "skipped_count", "deferred_count"},
 }
 
 // RequiredPayloadFields returns the payload keys that v1 requires for the given event type.

@@ -67,6 +67,12 @@ const (
 	// Optional pull-request kinds added for feature 004-worktree-flow.
 	TypePROpened        Type = "pr_opened"
 	TypePRUpdateRefused Type = "pr_update_refused"
+
+	// Plan-stage clarification lifecycle kinds added for feature
+	// 006-plan-clarifications. Additive: existing envelope unchanged.
+	TypeClarificationsRequested Type = "clarifications_requested"
+	TypeClarificationsResolved  Type = "clarifications_resolved"
+	TypeClarificationsPending   Type = "clarifications_pending"
 )
 
 // KnownTypes returns every event type defined in v1.
@@ -83,6 +89,7 @@ func KnownTypes() []Type {
 		TypeSessionCompleted,
 		TypeWorktreeCreated, TypeWorktreeRemoved, TypeWorktreeMissing,
 		TypePROpened, TypePRUpdateRefused,
+		TypeClarificationsRequested, TypeClarificationsResolved, TypeClarificationsPending,
 	}
 }
 
