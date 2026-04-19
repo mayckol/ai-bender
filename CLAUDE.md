@@ -6,6 +6,8 @@ AGENTS.md
 - Go 1.22+ (CLI + validator); Bun 1.x (bundler for UI assets, unchanged) + Cobra (CLI), `gopkg.in/yaml.v3` (YAML), stdlib `embed` / `io/fs` (asset embedding) (002-pipeline-config-move)
 - Local filesystem. `.bender/pipeline.yaml` + `.bender/groups.yaml` as config; `.bender/sessions/` + `.bender/artifacts/` + `.bender/cache/` as runtime state (002-pipeline-config-move)
 - Go 1.26.2 (per `go.mod`) (003-init-optional-skills)
+- Go 1.26.2 (unchanged from 004) (005-worktree-followups)
+- Local filesystem only (unchanged). (005-worktree-followups)
 
 ## Recent Changes
 - 001-ai-bender-pipeline: Added Go 1.22+ + Cobra (command surface), Viper (settings precedence layering), `go-yaml` v3 (YAML parsing for agents/skills/groups/settings), Bubble Tea + Lip Gloss (multi-agent TUI renderer), `gorilla/websocket` (WebSocket sink), `net/http` (HTTP sink), `net` Unix domain sockets (local socket sink), `embed` (stdlib, embedded defaults).

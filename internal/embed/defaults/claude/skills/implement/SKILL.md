@@ -36,6 +36,49 @@ Intent events (`skill_invoked`, `orchestrator_decision`, `agent_started`) append
 
 ## Workflow
 
+### Worktree provisioning (MANDATORY — first action, no silent fall-back)
+
+Before creating `.bender/sessions/<id>/`, writing `state.json`, or dispatching any
+stage, this skill MUST provision a git worktree via the bender binary. Every file
+the pipeline writes during this session lands inside that worktree; the main
+working tree is never touched by the pipeline.
+
+```bash
+# 1. Generate <session-id> — same format as before (UTC timestamp + rand3).
+SESSION_ID="$(date -u +%Y-%m-%dT%H-%M-%S)-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 3)"
+
+# 2. Probe the bender binary.
+if command -v bender >/dev/null 2>&1 && bender worktree --help >/dev/null 2>&1; then
+    WT_OUT="$(bender worktree create "$SESSION_ID")"
+elif [[ -x .specify/extensions/worktree/scripts/bash/worktree.sh ]]; then
+    WT_OUT="$(bash .specify/extensions/worktree/scripts/bash/worktree.sh create "$SESSION_ID")"
+else
+    printf 'error: bender v0.18.0+ is required for worktree-isolated sessions.\n' >&2
+    printf 'Install: go install github.com/mayckol/ai-bender/cmd/bender@latest\n' >&2
+    printf '    OR   drop .specify/extensions/worktree/scripts/ into the project.\n' >&2
+    exit 1
+fi
+
+# 3. Parse the binary's two output lines:
+#    worktree: <absolute path>
+#    branch:   bender/session/<SESSION_ID>
+WORKTREE_PATH="$(printf '%s\n' "$WT_OUT" | awk '/^worktree:/ {print $2}')"
+SESSION_BRANCH="$(printf '%s\n' "$WT_OUT" | awk '/^branch:/ {print $2}')"
+
+# 4. Adopt the worktree as the working directory for every subsequent tool call.
+cd "$WORKTREE_PATH"
+
+# 5. state.json and events.jsonl have ALREADY been populated by
+#    `bender worktree create` — do not rewrite them here. The skill continues
+#    with its single-task dispatch next, per the steps below.
+```
+
+On refusal (exit code 10/11/12/13 from `bender worktree create`), abort the
+session immediately — never fall back to writing in the main tree.
+
+<!-- END WORKTREE PROVISIONING BLOCK — do not modify this comment;
+     tests/integration/skills_initialisation_test.go grep for it. -->
+
 1. **Required argument**: a task id (e.g., `T012`) or a unique substring of a task title.
 2. **Resolve** the latest approved plan; refuse if missing (`error: no approved plan; run /plan confirm first`).
 3. **Locate the task** in `.bender/artifacts/plan/tasks-<ts>.md`. If the argument matches multiple tasks, list them and refuse.
@@ -64,21 +107,17 @@ Same envelope as `/ghu`. Stage is **`implement`** for every stage/skill/artifact
 ### Everything else
 Identical to the `/ghu` shapes — `agent_started` / `agent_progress` / `agent_completed` / `agent_failed` / `agent_blocked`, `skill_invoked` / `skill_completed` / `skill_failed`, `file_changed`, `finding_reported`, `artifact_written` — but with `payload.stage: "implement"` on every stage/skill/artifact event. See `.claude/skills/ghu/SKILL.md` for the full set. The `agents_summary` in `session_completed` typically has 1-3 entries (crafter + tester + optional reviewer).
 
-### state.json (overwrite in place)
-```json
-{
-  "schema_version": 1,
-  "session_id": "<session_id>",
-  "command": "/implement",
-  "started_at": "<iso>",
-  "completed_at": "<iso, once terminal>",
-  "status": "running|completed|failed",
-  "source_artifacts": ["<spec path>","<tasks path>"],
-  "skills_invoked": ["<skill names actually invoked>"],
-  "files_changed": <int>,
-  "findings_count": <int>
-}
-```
+### state.json (authored by `bender worktree create`)
+
+`state.json` is written by the binary (or the fallback script) during the
+Worktree provisioning step, at schema v2, with `worktree`, `session_branch`,
+`base_branch`, and `base_sha` populated. The orchestrator does NOT rewrite
+this file during the session — it only updates the top-level `status`,
+`completed_at`, `skills_invoked`, `files_changed`, and `findings_count`
+fields at terminal transitions, preserving every v2 worktree field verbatim.
+
+Full schema: `internal/session/state.go`'s `State` struct plus
+`specs/004-worktree-flow/contracts/state-v2.schema.yaml`.
 
 ### Forbidden shortcuts
 - `ts` / `event` / inlined payload fields / missing `schema_version|session_id|actor|payload` — all WRONG.

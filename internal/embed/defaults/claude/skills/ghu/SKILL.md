@@ -37,17 +37,59 @@ $ARGUMENTS
 
 1. If `$ARGUMENTS` contains `--inline` → skip to the "Workflow" section below and execute it directly in this conversation.
 2. Otherwise (default, or `--bg` explicitly) → **seed the session, then delegate**:
-   - **Seed the session directory BEFORE dispatching**, so the viewer URL has something to show the moment the browser opens (otherwise Chrome races the subagent and lands on a blank/404 page):
-     1. Generate `<timestamp>` = UTC `YYYY-MM-DDTHH-MM-SS` and `<session-id>` = `<timestamp>-<rand3>`.
-     2. `mkdir -p .bender/sessions/<session-id>/`.
-     3. Write `state.json` with `{"schema_version":1,"session_id":"<session-id>","command":"/ghu","started_at":"<iso>","status":"running","source_artifacts":["<spec path>","<tasks path>"],"skills_invoked":[],"files_changed":0,"findings_count":0}`.
-     4. Append `session_started` to `events.jsonl` (one `printf` — same envelope as "Observability shape" below).
-     5. Append `stage_started` to `events.jsonl` (one `printf`).
+
+### Worktree provisioning (MANDATORY — first action, no silent fall-back)
+
+Before creating `.bender/sessions/<id>/`, writing `state.json`, or dispatching any
+stage, this skill MUST provision a git worktree via the bender binary. Every file
+the pipeline writes during this session lands inside that worktree; the main
+working tree is never touched by the pipeline.
+
+```bash
+# 1. Generate <session-id> — same format as before (UTC timestamp + rand3).
+SESSION_ID="$(date -u +%Y-%m-%dT%H-%M-%S)-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 3)"
+
+# 2. Probe the bender binary.
+if command -v bender >/dev/null 2>&1 && bender worktree --help >/dev/null 2>&1; then
+    WT_OUT="$(bender worktree create "$SESSION_ID")"
+elif [[ -x .specify/extensions/worktree/scripts/bash/worktree.sh ]]; then
+    WT_OUT="$(bash .specify/extensions/worktree/scripts/bash/worktree.sh create "$SESSION_ID")"
+else
+    printf 'error: bender v0.18.0+ is required for worktree-isolated sessions.\n' >&2
+    printf 'Install: go install github.com/mayckol/ai-bender/cmd/bender@latest\n' >&2
+    printf '    OR   drop .specify/extensions/worktree/scripts/ into the project.\n' >&2
+    exit 1
+fi
+
+# 3. Parse the binary's two output lines:
+#    worktree: <absolute path>
+#    branch:   bender/session/<SESSION_ID>
+WORKTREE_PATH="$(printf '%s\n' "$WT_OUT" | awk '/^worktree:/ {print $2}')"
+SESSION_BRANCH="$(printf '%s\n' "$WT_OUT" | awk '/^branch:/ {print $2}')"
+
+# 4. Adopt the worktree as the working directory for every subsequent tool call.
+cd "$WORKTREE_PATH"
+
+# 5. state.json and events.jsonl have ALREADY been populated by
+#    `bender worktree create` — do not rewrite them here. The skill continues
+#    with orchestrator_decision (task_decomposition) next, per the Observability
+#    shape section below.
+```
+
+On refusal (exit code 10/11/12/13 from `bender worktree create`), abort the
+session immediately — never fall back to writing in the main tree.
+
+<!-- END WORKTREE PROVISIONING BLOCK — do not modify this comment;
+     tests/integration/skills_initialisation_test.go grep for it. -->
+
+Then continue the dispatch:
+
+   - After the worktree is provisioned (steps 1–5 above), append `session_started` and `stage_started` to `.bender/sessions/<SESSION_ID>/events.jsonl` (one `printf` each — same envelope as "Observability shape" below). `state.json` has already been authored by the binary with schema v2; do NOT overwrite it.
    - Invoke the **Agent tool** exactly once with:
      - `subagent_type: general-purpose`
      - `run_in_background: true`
      - `description`: `"ghu background run"`
-     - `prompt`: a self-contained message that includes (a) the full body of this SKILL.md **from the `## Actor discipline` section onward** (this is critical — `## Actor discipline`, `## Event emission discipline — STREAM, never batch`, `## Pre-Execution Checks`, `## Workflow`, and `## Observability shape` must ALL be in the subagent prompt; if you slice from `## Workflow` the subagent never sees the streaming rule and falls back to batch-at-end, leaving the viewer blank until completion), (b) the user's `$ARGUMENTS` (with `--bg` stripped), (c) the absolute working directory, AND (d) an explicit `SESSION_ID=<session-id>` line plus a note that the session directory, `state.json`, `session_started`, and `stage_started` have **already been written by the dispatcher** — the subagent must continue from `orchestrator_decision` (task_decomposition) onward and must NOT re-emit `session_started` / `stage_started` or recreate `state.json`. The subagent MUST obey the STREAM-never-batch rule: each of its own events is one `printf >> events.jsonl` call at the moment it happens, so the viewer sees updates live.
+     - `prompt`: a self-contained message that includes (a) the full body of this SKILL.md **from the `## Actor discipline` section onward** (this is critical — `## Actor discipline`, `## Event emission discipline — STREAM, never batch`, `## Pre-Execution Checks`, `## Workflow`, and `## Observability shape` must ALL be in the subagent prompt; if you slice from `## Workflow` the subagent never sees the streaming rule and falls back to batch-at-end, leaving the viewer blank until completion), (b) the user's `$ARGUMENTS` (with `--bg` stripped), (c) the absolute working directory **set to `$WORKTREE_PATH` from the provisioning block** — the subagent's FIRST action is `cd "$WORKTREE_PATH"` so every tool call resolves inside the session worktree, AND (d) explicit `SESSION_ID=<session-id>` and `WORKTREE_PATH=<path>` lines plus a note that the session directory, v2 `state.json`, `session_started`, and `stage_started` have **already been written by the dispatcher** — the subagent must continue from `orchestrator_decision` (task_decomposition) onward and must NOT re-emit `session_started` / `stage_started` or recreate `state.json`. The subagent MUST obey the STREAM-never-batch rule: each of its own events is one `printf >> events.jsonl` call at the moment it happens, so the viewer sees updates live.
    - After launching, print to the user exactly:
      - The seeded session ID.
      - The target report path (`.bender/artifacts/ghu/run-<timestamp>-report.md`).
@@ -184,8 +226,8 @@ Run any `hooks.before_ghu`.
 5. **Honor `--abort-on-failure`** to halt on the first task failure (default: continue and mark blocked).
 
 6. **Session directory + initial events.**
-   - **`--bg` mode**: the dispatcher (see "Dispatcher" section above) has already created `.bender/sessions/<SESSION_ID>/`, written `state.json`, and appended `session_started` + `stage_started`. Use the `SESSION_ID` passed in the subagent prompt; do NOT recreate the directory and do NOT re-emit those two events.
-   - **`--inline` mode**: create `.bender/sessions/<id>/` yourself, write `state.json`, and append `session_started` + `stage_started` before continuing.
+   - **`--bg` mode**: the dispatcher (see "Dispatcher" section above) has already provisioned the worktree via `bender worktree create`, populated a v2 `.bender/sessions/<SESSION_ID>/state.json`, and appended `session_started` + `stage_started`. The subagent's `cd "$WORKTREE_PATH"` is the first shell action; use the `SESSION_ID` and `WORKTREE_PATH` passed in the subagent prompt and do NOT recreate the directory, rewrite `state.json`, or re-emit those two events.
+   - **`--inline` mode**: run the Worktree provisioning block from the Dispatcher section inline (same bash, same binary probe, same fallback). After `cd "$WORKTREE_PATH"`, append `session_started` + `stage_started` to `.bender/sessions/<SESSION_ID>/events.jsonl` and continue. `state.json` is already authored by the binary — do not rewrite it.
    - In **both** modes, append `orchestrator_decision` next (with `decision_type: "task_decomposition"`). The decomposition payload MUST carry the task list AND the dependency edges extracted from the tasks file: `{"decision_type":"task_decomposition","tasks":["T001","T002",...],"dependencies":[{"task":"T002","depends_on":["T001"]},...]}`. Tasks with no incoming edges are the first wave; everything else must wait for its prerequisites.
 
 7. **Evaluate the pipeline's declared variables** in the order they appear
@@ -376,21 +418,19 @@ Optional but **highly recommended** so the viewer can render a Write-tool-style 
 {"schema_version":1,"session_id":"<id>","timestamp":"<iso>","actor":{"kind":"orchestrator","name":"core"},"type":"session_completed","payload":{"status":"completed","duration_ms":<int>,"agents_summary":[{"agent":"crafter","status":"completed"},{"agent":"tester","status":"completed"}]}}
 ```
 
-### state.json (overwrite in place)
-```json
-{
-  "schema_version": 1,
-  "session_id": "<session_id>",
-  "command": "/ghu",
-  "started_at": "<iso>",
-  "completed_at": "<iso, once terminal>",
-  "status": "running|completed|failed",
-  "source_artifacts": ["<spec path>","<tasks path>"],
-  "skills_invoked": ["<skill names actually invoked>"],
-  "files_changed": <int>,
-  "findings_count": <int>
-}
-```
+### state.json (authored by `bender worktree create`)
+
+`state.json` is written by the binary (or the fallback script) during the
+Worktree provisioning step, at schema v2, with `worktree`, `session_branch`,
+`base_branch`, and `base_sha` populated. The orchestrator does NOT rewrite
+this file during the session — it only updates the top-level `status`,
+`completed_at`, `skills_invoked`, `files_changed`, and `findings_count`
+fields at terminal transitions, preserving every v2 worktree field verbatim.
+
+Full schema: `internal/session/state.go`'s `State` struct plus
+`specs/004-worktree-flow/contracts/state-v2.schema.yaml`. The v1→v2 field
+inventory and loader compatibility are documented in
+`specs/004-worktree-flow/data-model.md`.
 
 ### Forbidden shortcuts
 - `ts` / `event` / inlined payload fields / missing `schema_version|session_id|actor|payload` — all WRONG.

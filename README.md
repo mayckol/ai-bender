@@ -85,6 +85,26 @@ bender sessions validate <session-id>   # check state.json + events.jsonl agains
 bender doctor
 ```
 
+### After v0.19.0: a different way to start a project
+
+Starting a pipeline session has a new, mandatory first step — but **you don't type it yourself**. The embedded skill defaults materialised by `bender init` now make `/ghu` and `/implement` invoke `bender worktree create <session-id>` before any stage runs. From the user's perspective the flow is:
+
+1. `bender init` — scaffold once per project (unchanged).
+2. `/ghu` in Claude Code — the skill's first action is now worktree provisioning. You'll see two new lines at the top of the run:
+   ```
+   worktree: /path/to/my-service/.bender/worktrees/<session-id>
+   branch:   bender/session/<session-id>
+   ```
+   Every file the pipeline writes after that lands inside the worktree; your main working tree is untouched.
+3. When the session completes, optionally open a PR or MR with `bender sessions pr <id>` (opt-in; uses `gh` or `glab`).
+4. Clean up with `bender worktree remove <id>` (keeps the session branch so any open PR survives).
+
+**Upgrading an existing project**: re-run `bender init` in the project root. It is idempotent — files you have NOT edited are refreshed to the v0.19.0 skills; files you HAVE edited are preserved and the new content is written to `*.proposed` sidecars so you can diff and merge at your own pace.
+
+**Version floor**: the updated skills require `bender` v0.18.0 or later on your `PATH` (or the fallback script at `.specify/extensions/worktree/scripts/bash/worktree.sh`). If neither is available when `/ghu` fires, the skill aborts with an explicit upgrade message — it never silently falls back to writing in the main tree.
+
+Legacy v1 sessions (started before v0.19.0) continue to load unchanged; `bender sessions list` labels them `legacy` in the `WORKTREE` column.
+
 ## Command reference
 
 There are two surfaces:
@@ -270,6 +290,8 @@ Behavior:
 
 Every bender pipeline session now runs inside its own **git worktree** on its own session branch (`bender/session/<id>`). The main working tree is never written to by bender itself — your uncommitted edits, running dev server, and file watchers are untouched while a session is in flight, and two sessions can run against the same repo in parallel without colliding.
 
+**Since v0.19.0**: `/ghu` and `/implement` automatically invoke `bender worktree create` at session start through their embedded skill defaults — you no longer need to run it by hand. The subcommand remains available for manual use (debugging, scripted workflows, or any time you want a worktree without a pipeline session attached).
+
 Worktree isolation is **mandatory** — there is no in-place / legacy mode. When git is unavailable, the repo is bare, or the repo is mid-rebase/merge/cherry-pick, bender refuses to start a session with a specific error rather than falling back to the main tree.
 
 **Default layout:**
@@ -330,7 +352,7 @@ After a session completes, push its branch and open a PR — only when you expli
 bender sessions pr <session-id> [--draft] [--refuse-update] [--json]
 ```
 
-Uses your locally installed platform CLI (`gh` for `github.com` remotes; `glab` stubbed for v1 and targeting a future release). The PR body is pre-populated from the session's summary artefact; the platform CLI's normal interactive flow lets you edit before submitting. Re-running the command refreshes the PR description and pushes new commits rather than opening a duplicate (use `--refuse-update` to get exit code 33 instead).
+Uses your locally installed platform CLI — `gh` for `github.com` remotes and `glab` for `gitlab.com` remotes (both shipped since v0.19.0; self-hosted GitLab and GitHub Enterprise are not yet covered). The PR / MR body is pre-populated from the session's summary artefact; the platform CLI's normal interactive flow lets you edit before submitting. Re-running the command refreshes the description and pushes new commits rather than opening a duplicate (use `--refuse-update` to get exit code 33 instead).
 
 PR state is **snapshotted at invocation time** — `bender sessions list` shows what was true when you ran the command. Use `gh pr view <url>` (or your platform equivalent) for live state.
 
@@ -420,11 +442,11 @@ Optional. Mirrors the source tree under `artifacts/plan/tests/` with prose-only 
 
 #### `/ghu [--bg | --inline] [--from=<spec>] [--only=<task>] [--skip=<name>[,<name>...]] [--abort-on-failure]`
 
-Execute the approved plan. The only stage that writes code. If `/tdd` produced approved scaffolds under `.bender/artifacts/plan/tests/`, `/ghu` switches into **TDD mode** (Red → Green → Refactor): tester materialises executable tests from the scaffolds and runs them until they fail, crafter then implements until they pass, a surgeon cleanup pass keeps tests green. Otherwise it walks the plain graph (scout → architect → optional surgeon → crafter ∥ tester → linter → reviewer ∥ sentinel ∥ benchmarker ∥ scribe → final report). Both paths produce:
-- Source-tree mutations within each agent's declared write scope.
+Execute the approved plan. The only stage that writes code. Since v0.19.0, the skill's first action is to provision a session-owned worktree via `bender worktree create <session-id>`; every subsequent file write lands inside the worktree on a dedicated `bender/session/<id>` branch, and the main working tree is never touched. If `/tdd` produced approved scaffolds under `.bender/artifacts/plan/tests/`, `/ghu` switches into **TDD mode** (Red → Green → Refactor): tester materialises executable tests from the scaffolds and runs them until they fail, crafter then implements until they pass, a surgeon cleanup pass keeps tests green. Otherwise it walks the plain graph (scout → architect → optional surgeon → crafter ∥ tester → linter → reviewer ∥ sentinel ∥ benchmarker ∥ scribe → final report). Both paths produce:
+- Worktree-tree mutations within each agent's declared write scope (physical location: `.bender/worktrees/<session-id>/`).
 - `artifacts/ghu/run-<ts>-report.md` final report.
 - `artifacts/ghu/{reviews,security,perf}/<ts>/` per-agent outputs.
-- `artifacts/.bender/sessions/<id>/{state.json,events.jsonl}` for `bender sessions` to inspect.
+- `artifacts/.bender/sessions/<id>/{state.json,events.jsonl}` for `bender sessions` to inspect (state.json is v2 and carries `worktree`, `session_branch`, `base_branch`, `base_sha`).
 
 **Execution mode**
 
@@ -452,7 +474,7 @@ Refuses to start if any required upstream artifact is missing. With `--abort-on-
 
 #### `/implement <task-id-or-title> [--skip=<name>[,<name>...]]`
 
-`/ghu` scoped to a single task from the latest approved plan. All write-scope, failure-policy, `--skip`, and serialization rules from `/ghu` apply identically.
+`/ghu` scoped to a single task from the latest approved plan. Same worktree-provisioning behaviour as `/ghu` since v0.19.0 — the session branch and worktree directory are created on the first action, and stage writes land inside the worktree. All write-scope, failure-policy, `--skip`, and serialization rules from `/ghu` apply identically.
 
 #### `/bender-doctor`
 
@@ -625,7 +647,29 @@ The dev-time Bun server under `ui/` (`cd ui && bun run dev`) is kept for fast cl
 
 See [`ui/README.md`](ui/README.md) for the HTTP API and test commands.
 
-## Upgrade notes — v0.17.0
+## Upgrade notes
+
+### v0.19.0 — GitLab adapter + orchestrator skills provision worktrees automatically
+
+The GitLab adapter shipped, so `bender sessions pr <id>` now opens merge requests against `gitlab.com` remotes via the user's locally installed `glab` CLI (parity with the existing GitHub adapter's `gh` flow, same exit-code table, same `--refuse-update` semantics).
+
+The embedded orchestrator skills (`.claude/skills/ghu/SKILL.md`, `.claude/skills/implement/SKILL.md`) were updated to call `bender worktree create <session-id>` as their first action. From v0.19.0 onward, every pipeline session materialises a dedicated git worktree and a session branch before any stage runs — your main working tree is never touched by the pipeline. The skill aborts with an explicit upgrade message if `bender` v0.18.0+ (or the fallback script) is not available on `PATH`; there is no silent fall-back to in-place writes.
+
+Migration for projects scaffolded on v0.18.x:
+
+```bash
+go install github.com/mayckol/ai-bender/cmd/bender@latest
+cd path/to/your-project
+bender init                # idempotent; user-edited skills get *.proposed sidecars
+```
+
+Merge any `*.proposed` sidecars into your customised skills when you're ready. Legacy v1 sessions on disk continue to load unchanged and appear as `legacy` in `bender sessions list`.
+
+### v0.18.0 — mandatory worktree isolation
+
+Every pipeline session now runs inside a dedicated git worktree; `state.json` bumped to schema v2 (v1 files continue to load). Five new event kinds emitted at lifecycle boundaries (`worktree_created`, `worktree_removed`, `worktree_missing`, `pr_opened`, `pr_update_refused`). New subcommands: `bender worktree {create,list,remove,prune}` and `bender sessions pr`. No in-place mode — incompatible repos refuse to start with a specific exit code. See the [`bender worktree` section](#bender-worktree--isolated-pipeline-runs) for the full surface.
+
+### v0.17.0 — bender-owned config moved out of `.claude/`
 
 Bender-owned configuration moved out of `.claude/` into `.bender/`. `.claude/` is now reserved for Claude Code–native artefacts (agents + skills); `.bender/` owns every bender-invented file (`pipeline.yaml` + `groups.yaml` + runtime state).
 

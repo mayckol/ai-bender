@@ -59,6 +59,20 @@ func NewSeededRepo(t *testing.T) string {
 	return dir
 }
 
+// NewSeededRepoWithRemote creates a seeded repo and adds a single `origin`
+// remote pointing at remoteURL. Used by adapter tests that need `git remote
+// get-url origin` to resolve to a URL matching a specific platform hostname
+// (e.g., gitlab.com, github.com) without any real network traffic.
+func NewSeededRepoWithRemote(t *testing.T, remoteURL string) string {
+	t.Helper()
+	repo := NewSeededRepo(t)
+	cmd := exec.Command("git", "-C", repo, "remote", "add", "origin", remoteURL)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git remote add origin %s: %v\n%s", remoteURL, err, out)
+	}
+	return repo
+}
+
 // DirtyRepo returns a seeded repo plus an uncommitted-change setup:
 //   - a tracked file with a local modification,
 //   - an untracked file in the root.
