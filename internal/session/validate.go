@@ -128,9 +128,9 @@ func validateState(s *State) []string {
 		msgs = append(msgs, "started_at is required")
 	}
 	switch s.Status {
-	case "running", "awaiting_confirm", "completed", "failed":
+	case "running", "awaiting_confirm", "completed", "failed", StatusAwaitingClarification:
 	default:
-		msgs = append(msgs, fmt.Sprintf("status=%q (want running|awaiting_confirm|completed|failed)", s.Status))
+		msgs = append(msgs, fmt.Sprintf("status=%q (want running|awaiting_confirm|awaiting_clarification|completed|failed)", s.Status))
 	}
 	if (s.Status == "awaiting_confirm" || s.Status == "completed" || s.Status == "failed") && s.CompletedAt.IsZero() {
 		msgs = append(msgs, fmt.Sprintf("completed_at is required when status=%q", s.Status))

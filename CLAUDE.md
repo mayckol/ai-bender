@@ -8,6 +8,8 @@ AGENTS.md
 - Go 1.26.2 (per `go.mod`) (003-init-optional-skills)
 - Go 1.26.2 (unchanged from 004) (005-worktree-followups)
 - Local filesystem only (unchanged). (005-worktree-followups)
+- Go 1.26.2 (per `go.mod`). + `cobra` (CLI), `huh` v1.0.0 (TTY forms — already in use, drives the multiple-choice prompt), `gopkg.in/yaml.v3` (existing config layer), stdlib `embed`, `os`, `bufio` (non-interactive stdin path), `golang.org/x/term` (TTY detection). (006-plan-clarifications)
+- Local filesystem only. Clarifications artifact at `.bender/artifacts/plan/clarifications-<timestamp>.md`. Reuse index implicit (re-scanned from prior `clarifications-*.md` files matching the source capture). (006-plan-clarifications)
 
 ## Recent Changes
 - 001-ai-bender-pipeline: Added Go 1.22+ + Cobra (command surface), Viper (settings precedence layering), `go-yaml` v3 (YAML parsing for agents/skills/groups/settings), Bubble Tea + Lip Gloss (multi-agent TUI renderer), `gorilla/websocket` (WebSocket sink), `net/http` (HTTP sink), `net` Unix domain sockets (local socket sink), `embed` (stdlib, embedded defaults).

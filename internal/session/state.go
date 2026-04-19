@@ -17,6 +17,13 @@ import (
 // v1 files continue to load — validateState accepts both 1 and 2.
 const SchemaVersion = 2
 
+// StatusAwaitingClarification is the session status set while a /plan run is
+// paused waiting for clarification answers (interactive mode), or after a
+// non-interactive strict-mode run aborted before writing the rest of the plan
+// set. Added for feature 006-plan-clarifications. Additive enum value;
+// schema_version is not bumped.
+const StatusAwaitingClarification = "awaiting_clarification"
+
 // WorktreeStatus tracks the lifecycle of the per-session worktree directory.
 type WorktreeStatus string
 
@@ -76,6 +83,12 @@ type State struct {
 	BaseBranch    string       `json:"base_branch,omitempty"`
 	BaseSHA       string       `json:"base_sha,omitempty"`
 	PullRequest   *PullRequest `json:"pull_request,omitempty"`
+
+	// ClarificationsArtifact points at the in-progress
+	// .bender/artifacts/plan/clarifications-<ts>.md while Status is
+	// "awaiting_clarification". Empty otherwise. Added for feature
+	// 006-plan-clarifications.
+	ClarificationsArtifact string `json:"clarifications_artifact,omitempty"`
 }
 
 // ErrNoState is returned when state.json is missing from a session directory.
