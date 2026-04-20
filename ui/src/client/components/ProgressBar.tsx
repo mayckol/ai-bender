@@ -10,20 +10,32 @@ interface Props {
 export function ProgressBar({ events, frozen, status }: Props) {
   let sessionPct = 0;
   let sessionStep = '';
+  // Track completed/total nodes from orchestrator_progress so the dial tooltip
+  // can show real counts (feature 007). Monotonic non-decreasing — we ignore
+  // any event whose percent regresses below a previously-seen value.
+  let completedNodes: number | null = null;
+  let totalNodes: number | null = null;
   const perAgent = new Map<string, { pct: number; step: string }>();
 
   for (const ev of events) {
     if (ev.type === 'orchestrator_progress') {
       const p = (ev.payload ?? {}) as Record<string, unknown>;
-      if (typeof p.percent === 'number') sessionPct = clamp(p.percent);
+      if (typeof p.percent === 'number') {
+        const next = clamp(p.percent);
+        if (next >= sessionPct) sessionPct = next;
+      }
       if (typeof p.current_step === 'string') sessionStep = p.current_step;
+      if (typeof p.completed_nodes === 'number') completedNodes = p.completed_nodes;
+      if (typeof p.total_nodes === 'number') totalNodes = p.total_nodes;
     } else if (ev.type === 'agent_progress') {
       const p = (ev.payload ?? {}) as Record<string, unknown>;
       const agent = typeof p.agent === 'string' && p.agent ? p.agent : ev.actor.name;
       if (!agent) continue;
       const pct = typeof p.percent === 'number' ? clamp(p.percent) : 0;
       const step = typeof p.current_step === 'string' ? p.current_step : '';
-      perAgent.set(agent, { pct, step });
+      const prev = perAgent.get(agent);
+      // Monotonic per-agent — don't let a stale event pull the bar backward.
+      perAgent.set(agent, { pct: Math.max(pct, prev?.pct ?? 0), step });
     } else if (ev.type === 'session_completed') {
       sessionPct = 100;
       sessionStep = 'session_completed';
@@ -31,6 +43,9 @@ export function ProgressBar({ events, frozen, status }: Props) {
   }
 
   if (frozen && sessionPct < 100) sessionPct = 100;
+  const nodeTooltip = completedNodes !== null && totalNodes !== null
+    ? `${completedNodes}/${totalNodes} nodes`
+    : null;
 
   const agents = [...perAgent.entries()].sort(([a], [b]) => a.localeCompare(b));
   const state = status === 'completed'
@@ -58,9 +73,12 @@ export function ProgressBar({ events, frozen, status }: Props) {
             <span class="readout-kicker">STAGE · telemetry</span>
             <StateSignal state={state} />
           </div>
-          <div class="readout-step" title={sessionStep}>
+          <div class="readout-step" title={nodeTooltip ?? sessionStep}>
             <span class="readout-caret" aria-hidden="true">›</span>
-            <span class="readout-step-text">{sessionStep || (sessionPct === 0 ? 'standby — awaiting orchestrator' : '')}</span>
+            <span class="readout-step-text">
+              {sessionStep || (sessionPct === 0 ? 'standby — awaiting orchestrator' : '')}
+              {nodeTooltip && <span class="readout-step-nodes"> · {nodeTooltip}</span>}
+            </span>
           </div>
           <div class="readout-meta">
             <MetaCell label="events" value={String(events.length).padStart(3, '0')} />

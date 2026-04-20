@@ -49,10 +49,33 @@ working tree is never touched by the pipeline.
 # 1. Generate <session-id> — same format as before (UTC timestamp + rand3).
 SESSION_ID="$(date -u +%Y-%m-%dT%H-%M-%S)-$(head -c 6 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 3)"
 
+# 1a. Resolve the workflow id so /tdd → /ghu render as one timeline in the viewer.
+#     Uses the current git branch as the grouping key; sessions started on the
+#     same branch within 24h inherit the same workflow id.
+WORKFLOW_KEY="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+WORKFLOW_ID=""
+WORKFLOW_PARENT=""
+if [[ -n "$WORKFLOW_KEY" ]] && command -v bender >/dev/null 2>&1; then
+    WF_JSON="$(bender workflow resolve --key "$WORKFLOW_KEY" 2>/dev/null || true)"
+    if [[ -n "$WF_JSON" ]]; then
+        WORKFLOW_ID="$(printf '%s' "$WF_JSON" | sed -n 's/.*"workflow_id":"\([^"]*\)".*/\1/p')"
+        WORKFLOW_PARENT="$(printf '%s' "$WF_JSON" | sed -n 's/.*"parent_session_id":"\([^"]*\)".*/\1/p')"
+    fi
+fi
+
 # 2. Probe the bender binary.
+WT_FLAGS=()
+if [[ -n "$WORKFLOW_ID" ]]; then
+    WT_FLAGS+=(--workflow-id "$WORKFLOW_ID")
+fi
+if [[ -n "$WORKFLOW_PARENT" ]]; then
+    WT_FLAGS+=(--workflow-parent "$WORKFLOW_PARENT")
+fi
 if command -v bender >/dev/null 2>&1 && bender worktree --help >/dev/null 2>&1; then
-    WT_OUT="$(bender worktree create "$SESSION_ID")"
+    WT_OUT="$(bender worktree create "${WT_FLAGS[@]}" "$SESSION_ID")"
 elif [[ -x .specify/extensions/worktree/scripts/bash/worktree.sh ]]; then
+    # Fallback script does not yet carry workflow linkage; this is a soft
+    # degradation — the viewer falls back to per-session timelines.
     WT_OUT="$(bash .specify/extensions/worktree/scripts/bash/worktree.sh create "$SESSION_ID")"
 else
     printf 'error: bender v0.18.0+ is required for worktree-isolated sessions.\n' >&2
@@ -171,13 +194,37 @@ entry.
 
 ## Event emission discipline — STREAM, never batch
 
-**Every** event in "Observability shape" MUST be appended to `.bender/sessions/<id>/events.jsonl` **the moment its trigger happens** — **one Bash tool call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into one notification and the user sees `Waiting for events…` for the full run. This applies to both the orchestrator (main or `--bg` subagent) AND every worker subagent it dispatches — each worker emits its own events inside its own context using the same mechanism.
+**Every** event in "Observability shape" MUST be appended to `.bender/sessions/<id>/events.jsonl` **the moment its trigger happens** — **one `bender event emit` call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into one notification and the user sees `Waiting for events…` for the full run. This applies to both the orchestrator (main or `--bg` subagent) AND every worker subagent it dispatches — each worker emits its own events inside its own context using the same mechanism.
+
+Use the binary helper (feature 007). It performs an atomic `O_APPEND | O_SYNC` write and fsync so fsnotify fires per event — critical when the subagent's cwd is a worktree:
 
 ```bash
-printf '%s\n' '<single-line JSON>' >> .bender/sessions/<id>/events.jsonl
+bender event emit \
+  --sessions-root "$SESSIONS_ROOT" \
+  --session "$SESSION_ID" \
+  --type orchestrator_progress \
+  --actor-kind orchestrator \
+  --actor-name core \
+  --payload '{"percent":42,"current_step":"crafter","completed_nodes":3,"total_nodes":10}'
 ```
 
-Ordering: intent events (`skill_invoked`, `orchestrator_decision`, `agent_started`) append BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `agent_completed`, `stage_completed`, `session_completed`) append AFTER. `orchestrator_progress` + `agent_progress` append as their percent changes — not once at the end. Never buffer events and flush them with one `Write`.
+`$SESSIONS_ROOT` is the absolute path to the **main repo's** `.bender/sessions` (set it once at session start with `SESSIONS_ROOT="$REPO_ROOT/.bender/sessions"`). Passing `--sessions-root` explicitly is mandatory from inside a worktree because the skill's cwd is no longer the main repo.
+
+Fallback when the binary is unavailable: call `.specify/scripts/bash/event-emit.sh` with the same flags. Do **not** use raw `printf >> events.jsonl` — batched writes defeat the streaming contract and are what caused the "flow view frozen" regression.
+
+Ordering: intent events (`skill_invoked`, `orchestrator_decision`, `agent_started`) emit BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `agent_completed`, `stage_completed`, `session_completed`) emit AFTER. `orchestrator_progress` + `agent_progress` emit as their percent changes — not once at the end.
+
+### Computing `orchestrator_progress.percent`
+
+Replace any fixed baseline table (e.g. scout=10, architect=20) with a pure function of the DAG walk:
+
+```
+percent = round(100 * completed_nodes / total_nodes)
+```
+
+Emit one `orchestrator_progress` per node transition carrying the numeric `completed_nodes` and `total_nodes` alongside `percent`. This is what makes the scout-stage % (and every other stage %) reflect real progress rather than a hand-picked constant.
+
+Scout-family agents additionally emit one `agent_progress` per internal sub-step (one scan/grep/read batch) so the per-agent bar advances smoothly even when the session-level walk is between transitions.
 
 ## Pre-Execution Checks
 

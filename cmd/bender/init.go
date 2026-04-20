@@ -113,11 +113,25 @@ func runInit(out, errw io.Writer, _ *globalFlags, o *initOpts) error {
 		return &typedError{code: exitUserErr, err: fmt.Errorf("init: %w", err)}
 	}
 
+	// Feature 007: carry the prior PR preference into the form as its default
+	// so re-runs don't silently reset the user's choice.
+	var prefsToPersist *selection.Preferences
+	baselineOpenPR := false
+	if manifest != nil && manifest.Preferences != nil {
+		baselineOpenPR = manifest.Preferences.OpenPROnSuccess
+		copied := *manifest.Preferences
+		prefsToPersist = &copied
+	}
+
 	// TTY branch: no selection flags passed and stdin is a terminal →
 	// show the interactive checkbox form. Flags bypass the prompt (FR-005a).
 	if len(o.with) == 0 && len(o.without) == 0 && !o.noInteractive && term.IsTerminal(int(os.Stdin.Fd())) {
 		form := ui.NewForm()
-		out, err := form.Run(ui.FormInput{Catalog: cat, Baseline: sel})
+		out, err := form.Run(ui.FormInput{
+			Catalog:        cat,
+			Baseline:       sel,
+			BaselineOpenPR: baselineOpenPR,
+		})
 		if err != nil {
 			if errors.Is(err, ui.ErrCancelled) {
 				os.Exit(130)
@@ -125,6 +139,7 @@ func runInit(out, errw io.Writer, _ *globalFlags, o *initOpts) error {
 			return fmt.Errorf("init: form: %w", err)
 		}
 		sel = out.Selection
+		prefsToPersist = &selection.Preferences{OpenPROnSuccess: out.OpenPROnSuccess}
 	}
 
 	breaks := catalog.DetectBreaks(cat, sel)
@@ -153,7 +168,11 @@ func runInit(out, errw io.Writer, _ *globalFlags, o *initOpts) error {
 		return fmt.Errorf("init: scaffold: %w", err)
 	}
 
-	if err := selection.Save(root, sel); err != nil {
+	if err := selection.Save(selection.SaveParams{
+		WorkspaceRoot: root,
+		Components:    sel,
+		Preferences:   prefsToPersist,
+	}); err != nil {
 		return fmt.Errorf("init: persist selection: %w", err)
 	}
 

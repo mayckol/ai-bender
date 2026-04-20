@@ -68,6 +68,10 @@ export interface SessionState {
   // permissive so the viewer doesn't reject pre-existing sessions.
   blockers_count?: number;
   report_path?: string;
+  // Feature 007: workflow linkage — groups consecutive sessions on the same
+  // feature branch (e.g. /tdd → /ghu) so the UI can stitch their timelines.
+  workflow_id?: string;
+  workflow_parent_session_id?: string;
 }
 
 export interface SessionSummary {

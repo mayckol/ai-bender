@@ -15,6 +15,11 @@ import (
 type FormInput struct {
 	Catalog  *catalog.Catalog
 	Baseline map[string]bool
+
+	// BaselineOpenPR is the prior persisted value for the "open PR on
+	// successful /ghu" preference. Feature 007. Defaults to false when the
+	// project has no persisted preference yet.
+	BaselineOpenPR bool
 }
 
 // FormOutput is the user's confirmed selection. Cancel returns an error
@@ -22,6 +27,10 @@ type FormInput struct {
 // as "do nothing, exit cleanly" via the os.Exit 130 contract.
 type FormOutput struct {
 	Selection map[string]bool
+
+	// OpenPROnSuccess is the user's answer to the feature-007 PR confirm.
+	// Callers persist it to .bender/selection.yaml via selection.Save.
+	OpenPROnSuccess bool
 }
 
 // ErrCancelled signals the user hit Ctrl-C / Escape in the checkbox list.
@@ -60,6 +69,8 @@ func (huhForm) Run(in FormInput) (FormOutput, error) {
 		options = append(options, huh.NewOption(label, id))
 	}
 
+	openPR := in.BaselineOpenPR
+
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewMultiSelect[string]().
@@ -67,6 +78,12 @@ func (huhForm) Run(in FormInput) (FormOutput, error) {
 				Description("Toggle which optional components to install. Mandatory agents and skills are always installed.").
 				Options(options...).
 				Value(&selected),
+		),
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Open a pull request on successful /ghu runs?").
+				Description("When enabled, bender opens a PR via the git-host adapter after every successful /ghu. Disabled: no change from today's manual `bender session pr` flow.").
+				Value(&openPR),
 		),
 	)
 	if err := form.Run(); err != nil {
@@ -76,7 +93,7 @@ func (huhForm) Run(in FormInput) (FormOutput, error) {
 		return FormOutput{}, err
 	}
 
-	out := FormOutput{Selection: map[string]bool{}}
+	out := FormOutput{Selection: map[string]bool{}, OpenPROnSuccess: openPR}
 	// Start from mandatory-always-true; optional-false by default, flipped
 	// on for ids the user checked.
 	for id, comp := range in.Catalog.Components {

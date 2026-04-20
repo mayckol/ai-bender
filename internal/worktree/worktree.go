@@ -47,12 +47,17 @@ var ErrActiveSession = errors.New("session is active")
 
 // CreateInput is the input to Create.
 type CreateInput struct {
-	RepoRoot   string        // absolute path of the main repo working tree
-	SessionID  string        // unique session identifier (already validated)
-	BaseBranch string        // optional; when empty, Create uses the current branch
-	Command    string        // e.g. "bender worktree create" — recorded as state.command
-	Runner     GitRunner     // git invoker; required
+	RepoRoot   string    // absolute path of the main repo working tree
+	SessionID  string    // unique session identifier (already validated)
+	BaseBranch string    // optional; when empty, Create uses the current branch
+	Command    string    // e.g. "bender worktree create" — recorded as state.command
+	Runner     GitRunner // git invoker; required
 	Now        func() time.Time
+
+	// Optional workflow linkage (feature 007). When both are empty, the
+	// session is its own workflow; state.json records no workflow metadata.
+	WorkflowID              string
+	WorkflowParentSessionID string
 }
 
 // CreateOutput describes the newly-materialised session.
@@ -154,6 +159,8 @@ func Create(ctx context.Context, in CreateInput) (*CreateOutput, error) {
 			Status:    session.WorktreeActive,
 			CreatedAt: createdAt,
 		},
+		WorkflowID:              in.WorkflowID,
+		WorkflowParentSessionID: in.WorkflowParentSessionID,
 	}
 	if err := session.SaveState(sessionDir, state); err != nil {
 		return nil, err

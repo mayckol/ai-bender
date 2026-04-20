@@ -37,3 +37,19 @@ Persist at `.bender/cache/scout/<session-id>/modules/<path>.json` (same director
 - **Cache by module path + tree hash**. Re-summarising on cache hit is wasted I/O and wasted tokens.
 - **Compact**: the whole digest should be ≤ 50 entries in `public_api` for a typical module. If a module is so large the digest exceeds that, recursively summarise its children modules first and link them from the parent's `notes`.
 - **Only read public API surface**. Private helpers never appear in the digest — that's what individual file reads are for.
+
+## Progress emission (feature 007)
+
+Emit one `agent_progress` event per module summarised, via `bender event emit`. This keeps the UI's per-agent bar advancing while summarise is crunching modules rather than idling at 0% until completion:
+
+```bash
+bender event emit \
+  --sessions-root "$SESSIONS_ROOT" \
+  --session "$SESSION_ID" \
+  --type agent_progress \
+  --actor-kind agent \
+  --actor-name scout \
+  --payload '{"agent":"scout","percent":60,"current_step":"summarise internal/event"}'
+```
+
+`percent` is monotonically non-decreasing and reaches `100` before the agent returns.

@@ -64,3 +64,24 @@ Use the Grep tool with a regex pattern and an optional path scope. Persist to `g
 - **Bound the result size**. Hundreds of matches → return the top 50 with a `"more_available": N` field.
 - **Emit `file_changed` per cache write** so the viewer shows what scout indexed.
 - **Never mutate `index.json` destructively**: append + dedupe; do not rewrite.
+
+## Progress emission (feature 007)
+
+Scout is the pipeline's first real work and its live progress is what users watch for the "am I stuck?" signal. Emit one `agent_progress` event per internal sub-step using the `bender event emit` helper so the UI bar advances smoothly:
+
+```bash
+bender event emit \
+  --sessions-root "$SESSIONS_ROOT" \
+  --session "$SESSION_ID" \
+  --type agent_progress \
+  --actor-kind agent \
+  --actor-name scout \
+  --payload '{"agent":"scout","percent":40,"current_step":"grep sinks"}'
+```
+
+Rules:
+
+- Every operation (find-symbol, find-refs, read-file, list-tree, grep) counts as one sub-step.
+- `percent` is monotonically non-decreasing within the run and reaches `100` before scout returns. A reasonable heuristic is `percent = round(100 * completed_substeps / planned_substeps)`.
+- `current_step` is a short human-readable label (e.g. `"grep sinks"`, `"read internal/event/event.go"`).
+- Do **not** use raw `printf >> events.jsonl` — the helper's atomic append is what keeps fsnotify-based tails from batching.

@@ -151,6 +151,29 @@ export function pickLiveGhu(sessions: SessionSummary[]): SessionSummary | null {
 }
 
 /**
+ * Feature 007: Pick the workflow id the live view should subscribe to.
+ *
+ * Preference order:
+ *   1. Newest running session's workflow_id (TDD + /ghu share one when
+ *      linked on the same feature branch).
+ *   2. Newest completed /ghu session's workflow_id, as a fallback so the
+ *      view still stitches its immediate predecessors.
+ *
+ * Returns null when no session carries a workflow_id — callers fall back to
+ * `pickLiveGhu` and subscribe to a single session instead.
+ */
+export function pickLiveWorkflowId(sessions: SessionSummary[]): string | null {
+  const withWorkflow = sessions.filter((s) => !!s.state.workflow_id);
+  if (withWorkflow.length === 0) return null;
+
+  const running = withWorkflow.find((s) => s.state.status === 'running');
+  if (running?.state.workflow_id) return running.state.workflow_id;
+
+  const sorted = [...withWorkflow].sort((a, b) => b.id.localeCompare(a.id));
+  return sorted[0]?.state.workflow_id ?? null;
+}
+
+/**
  * Fold an event stream into the ordered wave list. Parallelism is made
  * explicit: every `orchestrator_decision(parallel_dispatch)` event opens a
  * shared wave for its `dispatched_agents`; every solo `agent_assignment`

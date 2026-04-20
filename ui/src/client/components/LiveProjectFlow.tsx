@@ -8,6 +8,7 @@ import {
   buildSessionWaves,
   pickBaseStageStates,
   pickLiveGhu,
+  pickLiveWorkflowId,
   type FlowNode,
   type FlowWave,
   type NodeState,
@@ -38,17 +39,23 @@ function flowEventKey(ev: BenderEvent): string {
  * sessions list, subscribes to its SSE stream, and renders the flow.
  */
 export function LiveProjectFlow({ sessions }: Props) {
+  const workflowId = useMemo(() => pickLiveWorkflowId(sessions), [sessions]);
   const liveGhu = useMemo(() => pickLiveGhu(sessions), [sessions]);
 
   const [events, setEvents] = useState<BenderEvent[]>([]);
   const [state, setState] = useState<SessionState | null>(null);
   const liveId = liveGhu?.id ?? null;
   const isLive = liveGhu?.state.status === 'running';
+  const subscription = workflowId
+    ? { kind: 'workflow' as const, url: `/api/workflows/${encodeURIComponent(workflowId)}/stream`, key: `wf:${workflowId}` }
+    : liveId
+      ? { kind: 'session' as const, url: `/api/sessions/${encodeURIComponent(liveId)}/stream`, key: `s:${liveId}` }
+      : null;
 
   const seenRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!liveId) {
+    if (!subscription) {
       setEvents([]);
       setState(null);
       seenRef.current = new Set();
@@ -57,15 +64,23 @@ export function LiveProjectFlow({ sessions }: Props) {
     setEvents([]);
     setState(null);
     seenRef.current = new Set();
-    const stop = subscribeSSE(`/api/sessions/${encodeURIComponent(liveId)}/stream`, {
+    const stop = subscribeSSE(subscription.url, {
       handlers: {
         snapshot: (ev) => {
           try {
-            const snap = JSON.parse(ev.data) as SessionExport;
-            setState(snap.state);
+            const raw = JSON.parse(ev.data) as (SessionExport | { events: BenderEvent[]; sessions?: { state: SessionState }[] });
+            const events = Array.isArray((raw as SessionExport).events)
+              ? (raw as SessionExport).events
+              : [];
+            const nextState =
+              (raw as SessionExport).state ??
+              (Array.isArray((raw as { sessions?: { state: SessionState }[] }).sessions)
+                ? (raw as { sessions: { state: SessionState }[] }).sessions.at(-1)?.state ?? null
+                : null);
+            setState(nextState);
             const seen = new Set<string>();
             const deduped: BenderEvent[] = [];
-            for (const e of snap.events) {
+            for (const e of events) {
               const k = flowEventKey(e);
               if (seen.has(k)) continue;
               seen.add(k);
@@ -90,7 +105,7 @@ export function LiveProjectFlow({ sessions }: Props) {
       },
     });
     return stop;
-  }, [liveId]);
+  }, [subscription?.key]);
 
   const header = liveGhu
     ? {

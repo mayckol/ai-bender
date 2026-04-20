@@ -21,12 +21,23 @@ const ManifestFileName = ".bender/selection.yaml"
 type Manifest struct {
 	SchemaVersion int                      `yaml:"schema_version"`
 	Components    map[string]ManifestEntry `yaml:"components"`
+	Preferences   *Preferences             `yaml:"preferences,omitempty"`
 }
 
 // ManifestEntry holds one component's persisted state. Extra fields may be
 // added in a future schema_version bump without breaking older readers.
 type ManifestEntry struct {
 	Selected bool `yaml:"selected"`
+}
+
+// Preferences carries additive user preferences set at `bender init` time.
+// Schema version stays at 1 — every field is optional with a safe default.
+// Added for feature 007-flow-scout-init-fixes.
+type Preferences struct {
+	// OpenPROnSuccess, when true, causes the after_implement PR hook to open a
+	// pull request for any /ghu session that completes with status=completed
+	// and outcome=success. Default false.
+	OpenPROnSuccess bool `yaml:"open_pr_on_success"`
 }
 
 // Load reads the manifest from workspace root. Absence is not an error — a
@@ -67,13 +78,32 @@ func (m *Manifest) Validate(cat *catalog.Catalog) error {
 	return nil
 }
 
-// Save writes the manifest to `.bender/selection.yaml` under workspaceRoot.
-// Creates the `.bender/` directory if missing. Atomic-ish: writes to a
-// sibling tempfile + rename.
-func Save(workspaceRoot string, sel map[string]bool) error {
+// SaveParams carries the inputs for Save. Keeping them on a struct honours
+// the project convention of capping function arguments at three.
+type SaveParams struct {
+	WorkspaceRoot string
+	Components    map[string]bool
+	Preferences   *Preferences
+}
+
+// Save writes the manifest to `.bender/selection.yaml` under
+// params.WorkspaceRoot. Creates the `.bender/` directory if missing.
+// Atomic-ish: writes to a sibling tempfile + rename.
+func Save(params SaveParams) error {
+	return saveManifest(params.WorkspaceRoot, params.Components, params.Preferences)
+}
+
+// SaveComponents is kept for backwards compatibility with call sites that
+// only persist the components map. Prefer Save(SaveParams{...}) at new sites.
+func SaveComponents(workspaceRoot string, sel map[string]bool) error {
+	return saveManifest(workspaceRoot, sel, nil)
+}
+
+func saveManifest(workspaceRoot string, sel map[string]bool, prefs *Preferences) error {
 	m := Manifest{
 		SchemaVersion: 1,
 		Components:    make(map[string]ManifestEntry, len(sel)),
+		Preferences:   prefs,
 	}
 	for id, v := range sel {
 		m.Components[id] = ManifestEntry{Selected: v}
