@@ -89,6 +89,16 @@ type State struct {
 	// "awaiting_clarification". Empty otherwise. Added for feature
 	// 006-plan-clarifications.
 	ClarificationsArtifact string `json:"clarifications_artifact,omitempty"`
+
+	// WorkflowID groups consecutive sessions belonging to the same feature
+	// (e.g. /tdd followed by /ghu). Absent for standalone sessions. Added for
+	// feature 007-flow-scout-init-fixes. Additive; schema_version is not bumped.
+	WorkflowID string `json:"workflow_id,omitempty"`
+
+	// WorkflowParentSessionID points at the prior session in the same workflow,
+	// when this session inherits its WorkflowID. Empty on the first session of
+	// a workflow. Added for 007-flow-scout-init-fixes.
+	WorkflowParentSessionID string `json:"workflow_parent_session_id,omitempty"`
 }
 
 // ErrNoState is returned when state.json is missing from a session directory.

@@ -54,6 +54,8 @@ this binary itself does not invoke any LLM.`,
 	root.AddCommand(newSyncDefaultsCmd(g))
 	root.AddCommand(newUpdateCmd(g))
 	root.AddCommand(newClarifyCmd(g))
+	root.AddCommand(newEventCmd(g))
+	root.AddCommand(newWorkflowCmd(g))
 	return root
 }
 

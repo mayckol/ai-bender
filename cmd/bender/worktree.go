@@ -33,7 +33,7 @@ lists, removes, and bulk-prunes them.`,
 }
 
 func newWorktreeCreateCmd(g *globalFlags) *cobra.Command {
-	var baseBranch string
+	var baseBranch, workflowID, workflowParent string
 	cmd := &cobra.Command{
 		Use:   "create <session-id>",
 		Short: "Create an isolated worktree for a pipeline session",
@@ -48,11 +48,13 @@ to stdout for downstream scripting.`,
 				return err
 			}
 			out, err := worktree.Create(context.Background(), worktree.CreateInput{
-				RepoRoot:   root,
-				SessionID:  args[0],
-				BaseBranch: baseBranch,
-				Command:    "bender worktree create",
-				Runner:     &worktree.ExecRunner{},
+				RepoRoot:                root,
+				SessionID:               args[0],
+				BaseBranch:              baseBranch,
+				Command:                 "bender worktree create",
+				Runner:                  &worktree.ExecRunner{},
+				WorkflowID:              workflowID,
+				WorkflowParentSessionID: workflowParent,
 			})
 			if err != nil {
 				return mapWorktreeError(cmd.ErrOrStderr(), err)
@@ -63,6 +65,8 @@ to stdout for downstream scripting.`,
 		},
 	}
 	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "base ref to fork the session branch from (defaults to current branch)")
+	cmd.Flags().StringVar(&workflowID, "workflow-id", "", "persist this workflow id in state.json (links TDD→/ghu sessions into one live view)")
+	cmd.Flags().StringVar(&workflowParent, "workflow-parent", "", "parent session id when inheriting a workflow id")
 	return cmd
 }
 

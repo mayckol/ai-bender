@@ -64,6 +64,7 @@ type handler struct {
 }
 
 var sessionRoute = regexp.MustCompile(`^/api/sessions/([^/]+)(?:/(stream|report))?$`)
+var workflowRoute = regexp.MustCompile(`^/api/workflows/([^/]+)(?:/(stream))?$`)
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
@@ -84,6 +85,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case path == "/styles.css":
 		writeBytes(w, "text/css; charset=utf-8", h.stylesCSS)
+		return
+	}
+
+	if m := workflowRoute.FindStringSubmatch(path); m != nil {
+		id := m[1]
+		if m[2] == "stream" {
+			h.streamWorkflow(w, r, id)
+		} else {
+			h.snapshotWorkflow(w, r, id)
+		}
 		return
 	}
 

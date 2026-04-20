@@ -25,13 +25,32 @@ $ARGUMENTS
 
 ## Event emission discipline — STREAM, never batch
 
-**Every** event MUST be appended to `.bender/sessions/<id>/events.jsonl` the moment its trigger happens — **one Bash tool call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into a single notification and the user sees `Waiting for events…` for the full run.
+**Every** event MUST be appended to `.bender/sessions/<id>/events.jsonl` the moment its trigger happens — **one `bender event emit` call per event**, not a single `Write` at the end. The bender-ui viewer tails the file via fsnotify; batching collapses the timeline into a single notification and the user sees `Waiting for events…` for the full run.
 
 ```bash
-printf '%s\n' '<single-line JSON>' >> .bender/sessions/<id>/events.jsonl
+bender event emit \
+  --sessions-root "$SESSIONS_ROOT" \
+  --session "$SESSION_ID" \
+  --type skill_invoked \
+  --actor-kind stage \
+  --actor-name tdd \
+  --payload '{"skill":"scaffold_enumerate","agent":"tester"}'
 ```
 
-Intent events (`skill_invoked`) append BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `stage_completed`, `session_completed`) append AFTER. Never buffer events and flush them with one `Write`.
+`$SESSIONS_ROOT` is the absolute path to the main repo's `.bender/sessions`. Fallback when the binary is unavailable: `.specify/scripts/bash/event-emit.sh` with the same flags. Do **not** use raw `printf >> events.jsonl`.
+
+When `/tdd` runs as a prerequisite to `/ghu`, resolve a shared workflow id so both sessions render as one timeline:
+
+```bash
+WORKFLOW_KEY="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+if [[ -n "$WORKFLOW_KEY" ]] && command -v bender >/dev/null 2>&1; then
+    WF_JSON="$(bender workflow resolve --key "$WORKFLOW_KEY" 2>/dev/null || true)"
+fi
+```
+
+Pass the parsed `workflow_id` (and `parent_session_id`, when inheriting) through to whichever session-creation step this skill uses.
+
+Intent events (`skill_invoked`) emit BEFORE the action; result events (`file_changed`, `artifact_written`, `skill_completed`, `stage_completed`, `session_completed`) emit AFTER. Never buffer events and flush them with one `Write`.
 
 ## Pre-Execution Checks
 

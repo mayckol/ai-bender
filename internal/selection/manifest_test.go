@@ -22,7 +22,7 @@ func TestLoad_Absent_ReturnsNil(t *testing.T) {
 func TestSaveLoadRoundtrip(t *testing.T) {
 	dir := t.TempDir()
 	in := map[string]bool{"benchmarker": false, "sentinel": true, "mistakeinator": true}
-	if err := Save(dir, in); err != nil {
+	if err := SaveComponents(dir, in); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	m, err := Load(dir)
@@ -113,6 +113,45 @@ func TestResolve_UnknownComponent_Rejected(t *testing.T) {
 	}
 }
 
+func TestPreferences_RoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	prefs := &Preferences{OpenPROnSuccess: true}
+	if err := Save(SaveParams{
+		WorkspaceRoot: dir,
+		Components:    map[string]bool{"scout": true},
+		Preferences:   prefs,
+	}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	m, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if m == nil || m.Preferences == nil {
+		t.Fatalf("Preferences not persisted: %+v", m)
+	}
+	if !m.Preferences.OpenPROnSuccess {
+		t.Errorf("OpenPROnSuccess = false, want true")
+	}
+}
+
+func TestPreferences_AbsentDefaultsFalse(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveComponents(dir, map[string]bool{"scout": true}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	m, err := Load(dir)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if m == nil {
+		t.Fatal("manifest nil")
+	}
+	if m.Preferences != nil && m.Preferences.OpenPROnSuccess {
+		t.Errorf("OpenPROnSuccess = true by default, want false")
+	}
+}
+
 func TestResolve_ContradictoryFlags_Rejected(t *testing.T) {
 	cat := fakeCatalog()
 	_, err := Resolve(cat, nil, Flags{With: []string{"benchmarker"}, Without: []string{"benchmarker"}})
@@ -123,7 +162,7 @@ func TestResolve_ContradictoryFlags_Rejected(t *testing.T) {
 
 func TestSave_WritesMapKeyedSchemaV1(t *testing.T) {
 	dir := t.TempDir()
-	if err := Save(dir, map[string]bool{"benchmarker": false}); err != nil {
+	if err := SaveComponents(dir, map[string]bool{"benchmarker": false}); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, ".bender", "selection.yaml"))

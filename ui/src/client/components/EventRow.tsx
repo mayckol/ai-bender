@@ -2,6 +2,7 @@ import { useState } from 'preact/hooks';
 
 import { agentColor, responsibleAgent } from '../lib/agents.ts';
 import type { BenderEvent } from '../lib/api.ts';
+import { CopyButton } from './CopyButton.tsx';
 
 interface Props { event: BenderEvent; }
 
@@ -42,6 +43,12 @@ function StructuredDetail({ event }: { event: BenderEvent }) {
       <header class="event-detail-head">
         <EventTypeBadge event={event} />
         <span class="event-detail-rule" aria-hidden="true" />
+        <CopyButton
+          class="event-detail-copy"
+          value={() => JSON.stringify(event, null, 2)}
+          label="copy event"
+          title="Copy the raw event JSON to the clipboard"
+        />
         <button
           type="button"
           class="event-detail-toggle"
