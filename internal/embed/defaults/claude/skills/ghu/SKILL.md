@@ -233,12 +233,13 @@ Run any `hooks.before_ghu`.
 ## Workflow
 
 1. **Resolve the source artifacts**:
-   - The latest **approved** spec at `.bender/artifacts/specs/<slug>-<ts>.md`.
+   - The latest **approved** spec at `.bender/artifacts/specs/<slug>-<ts>.md`. Every artifact in the plan set MUST have `status: approved` in its frontmatter; a set at `status: draft` is a plan that the user has not yet confirmed and `/ghu` MUST NOT touch it.
    - The matching task list at `.bender/artifacts/plan/tasks-<ts>.md`.
    - Optionally, test scaffolds at `.bender/artifacts/plan/tests/`.
-   - If anything required is missing, print:
+   - If anything required is missing OR if the latest plan set is still at `status: draft`, print:
      - `error: missing required upstream artifact: <name>. Run /plan and /plan confirm first.`
      - Exit. Do **not** create a partial session.
+   - If the latest `state.json` for a `/plan` session has `status: "awaiting_confirm"` and no newer `/plan confirm` session has flipped the set to approved, print the same error and exit. Implementation cannot begin while the plan is still under review.
 
 2. **Load `.bender/pipeline.yaml`** — the declarative execution DAG. Reject
    any pipeline whose `schema_version` you don't recognise. The full schema

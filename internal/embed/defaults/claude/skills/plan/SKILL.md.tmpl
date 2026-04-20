@@ -21,6 +21,18 @@ outputs:
 
 From the latest approved capture artifact, produce a coherent plan set under a single shared timestamp. **No code, no tests.**
 
+## ⛔ IMPLEMENTATION FORBIDDEN — read this first
+
+The `/plan` stage is a **design-only** stage. Its entire output is markdown artifacts under `.bender/artifacts/plan/` and `.bender/artifacts/specs/`. No source file under the project tree — no `.go`, `.ts`, `.tsx`, `.py`, `.rs`, `.sql`, test file, config, CLI wiring, or skill-to-skill refactor — may be created or modified by this stage.
+
+This rule applies to **every message in the planning turn**, including follow-ups. While the draft plan is in `status: awaiting_confirm`:
+
+- If the user asks to "add X", "change Y", "reconsider Z", or "think again", that is a **re-plan** request. Rewrite the affected plan-set artifacts in place (same timestamp) and re-emit their `artifact_written` events. **Do not implement anything.**
+- If the user asks to "implement", "apply", "write the code", "make it work", or similar, the correct response is to stop and say: `error: implementation belongs to /ghu. Run /plan confirm first, then /ghu.` Do not write code yourself.
+- Only two transitions leave the planning turn: (a) the user types `/plan confirm` (flips artifacts from draft → approved), or (b) the user types `/ghu` (which then re-validates that the plan set is approved before writing anything).
+
+Any editor action that targets a file outside `.bender/artifacts/plan/` or `.bender/artifacts/specs/` is a bug in this stage. Refuse and ask.
+
 ## User Input
 
 ```text
@@ -39,6 +51,26 @@ Run any `hooks.before_plan` from `.specify/extensions.yml`.
 2. Atomically flip every artifact in the set from `status: draft` → `status: approved`.
 3. Print "next: `/tdd` (optional) or `/ghu`".
 4. Stop.
+
+### If the draft plan set is in `awaiting_confirm` and the user requests changes
+
+Re-plan, do not implement. Concretely:
+
+1. Re-read the affected draft artifacts under `.bender/artifacts/plan/` (and the spec under `.bender/artifacts/specs/` when the change is scope-shaped).
+2. Apply the user's requested adjustments to those artifacts in place, preserving `status: draft` and the original timestamp.
+3. Re-emit one `artifact_written` event per rewritten file (new sha256).
+4. Leave `state.json.status` at `awaiting_confirm`. The only way to complete the stage is `/plan confirm`.
+5. Do **not** touch code, tests, CLI wiring, `internal/`, `cmd/`, `ui/`, or any source tree. Those are `/ghu`'s job — after `/plan confirm`.
+
+If the user types something that looks like "implement", "apply the plan", "write the code", or "run the implementation" while the plan is still in `awaiting_confirm`, stop and print:
+
+```
+error: planning stage is still awaiting_confirm. Implementation belongs to /ghu.
+  Approve the plan first:  /plan confirm
+  Then implement:          /ghu
+```
+
+Do not fall through into a `/ghu` execution from inside a `/plan` turn.
 
 ### If the user passed `--from=<cry-artifact>`
 
@@ -255,6 +287,7 @@ Run any `hooks.after_plan`.
 - All artifacts in the set MUST share the same timestamp.
 - `/plan confirm` MUST flip the entire set atomically — all-or-nothing.
 - Never write code or executable tests. Those belong in `/ghu`.
+- A follow-up user message during `awaiting_confirm` is a re-plan signal, not an implementation signal. See the "draft plan set is in awaiting_confirm" branch above.
 
 {{ if selected "mistakeinator" }}
 ## Consult the learned-mistakes artifact (mistakeinator)
