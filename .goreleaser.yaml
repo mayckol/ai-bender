@@ -1,0 +1,101 @@
+version: 2
+
+project_name: bender
+
+force_token: github
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: bender
+    main: ./cmd/bender
+    binary: bender
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/mayckol/ai-bender/internal/version.Version={{.Version}}
+
+archives:
+  - id: bender
+    ids:
+      - bender
+    name_template: >-
+      {{ .ProjectName }}_v{{ .Version }}_
+      {{- if eq .Os "darwin" }}darwin
+      {{- else if eq .Os "linux" }}linux
+      {{- else if eq .Os "windows" }}windows{{ end }}-
+      {{- .Arch }}
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "sha256sums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-dev+{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: mayckol
+    name: ai-bender
+  draft: false
+  prerelease: auto
+  name_template: "v{{ .Version }}"
+
+brews:
+  - name: bender
+    ids:
+      - bender
+    repository:
+      owner: mayckol
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/mayckol/ai-bender"
+    description: "Spec-driven scaffold for Claude Code — bender CLI"
+    license: MIT
+    commit_author:
+      name: mayckol
+      email: mayckoll@live.com
+    commit_msg_template: "bender: bump to {{ .Tag }}"
+    install: |
+      bin.install "bender"
+    test: |
+      system "#{bin}/bender", "version"

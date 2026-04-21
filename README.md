@@ -10,11 +10,27 @@ The binary never calls an LLM. It scaffolds, validates, and inspects. Claude Cod
 
 ## Install
 
+**Homebrew** (macOS / Linux):
+
+```bash
+brew install mayckol/tap/bender
+```
+
+**curl | sh** (macOS / Linux, no Go required):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mayckol/ai-bender/main/scripts/install.sh | sh
+```
+
+Env overrides: `BENDER_VERSION=v0.22.0`, `BENDER_PREFIX=$HOME/.local` (avoids `sudo`).
+
+**go install**:
+
 ```bash
 go install github.com/mayckol/ai-bender/cmd/bender@latest
 ```
 
-Or from source:
+**From source**:
 
 ```bash
 git clone https://github.com/mayckol/ai-bender
@@ -22,7 +38,7 @@ cd ai-bender
 make build install
 ```
 
-Ensure `$(go env GOPATH)/bin` is on your `PATH`. Verify with `bender version`.
+Ensure the install dir (`/usr/local/bin`, `$(go env GOPATH)/bin`, or `$BENDER_PREFIX/bin`) is on your `PATH`. Verify with `bender version`.
 
 ## Quickstart
 
@@ -225,4 +241,4 @@ agents:
 
 ## License
 
-TBD.
+MIT. See [`LICENSE`](LICENSE).
