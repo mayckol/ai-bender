@@ -27,10 +27,14 @@ const (
 	ExitServerStartFailed    = 62
 )
 
-const defaultServerPort = 4317
+const (
+	defaultServerPort = 4317
+	defaultServerHost = "127.0.0.1"
+)
 
 type serverFlags struct {
 	port       int
+	host       string
 	projectArg string
 	foreground bool
 	logPath    string
@@ -53,6 +57,7 @@ run it under systemd, launchd, or a foreground terminal for debugging.`,
 		},
 	}
 	cmd.Flags().IntVarP(&sf.port, "port", "p", defaultServerPort, "port to listen on")
+	cmd.Flags().StringVar(&sf.host, "host", defaultServerHost, "interface to bind on; use 0.0.0.0 to expose on LAN")
 	cmd.Flags().StringVar(&sf.projectArg, "project", "", "project root to watch (defaults to current working directory or --project flag from the root command)")
 	cmd.Flags().BoolVarP(&sf.foreground, "foreground", "f", false, "run in the foreground instead of detaching")
 	cmd.Flags().StringVar(&sf.logPath, "log", "", "log file path (default: <project>/.bender/bender-ui.log)")
@@ -144,7 +149,11 @@ func runServerStart(cmd *cobra.Command, g *globalFlags, sf *serverFlags) error {
 	if err != nil {
 		return err
 	}
-	addr := fmt.Sprintf(":%d", sf.port)
+	host := sf.host
+	if host == "" {
+		host = defaultServerHost
+	}
+	addr := net.JoinHostPort(host, strconv.Itoa(sf.port))
 	pidFile := resolveServerPidPath(root, sf)
 	logFile := resolveServerLogPath(root, sf)
 
@@ -167,7 +176,7 @@ func runServerStart(cmd *cobra.Command, g *globalFlags, sf *serverFlags) error {
 		return fmt.Errorf("server: create log dir: %w", err)
 	}
 
-	pid, err := spawnDaemon(root, addr, sf.port, logFile, pidFile)
+	pid, err := spawnDaemon(root, host, sf.port, logFile, pidFile)
 	if err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "server: failed to spawn: %v\n", err)
 		os.Exit(ExitServerStartFailed)

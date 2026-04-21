@@ -15,15 +15,19 @@ import (
 // The child runs `bender server --foreground --port <N> --project <root> --pid <path> --log <path>`
 // with BENDER_UI_DAEMON=1 in its environment. Setsid detaches it from the
 // controlling terminal so the user's shell returns immediately.
-func spawnDaemon(root, _ string, port int, logFile, pidFile string) (int, error) {
+func spawnDaemon(root, host string, port int, logFile, pidFile string) (int, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return 0, fmt.Errorf("server: resolve executable: %w", err)
 	}
 
+	if host == "" {
+		host = defaultServerHost
+	}
 	args := []string{
 		"server",
 		"--foreground",
+		"--host", host,
 		"--port", strconv.Itoa(port),
 		"--project", root,
 		"--pid", pidFile,
