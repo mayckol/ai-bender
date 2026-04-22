@@ -1,7 +1,7 @@
 ---
 name: ghu
 user-invocable: true
-argument-hint: "[--bg | --inline] [--from=<spec>] [--only=<task-id>] [--skip=<name>[,<name>...]] [--abort-on-failure]"
+argument-hint: "[--inline | --bg] [--from=<spec>] [--only=<task-id>] [--skip=<name>[,<name>...]] [--abort-on-failure]"
 context: fg
 description: "Execute the approved plan — implement, test, lint, review, and report. The only stage that writes code."
 provides: [stage, execute]
@@ -28,15 +28,15 @@ $ARGUMENTS
 
 `/ghu` supports two execution modes, selected by flags in `$ARGUMENTS`:
 
-- **`--bg` (default)** — Isolated-subagent mode. The workflow runs inside a forked `Agent` context so the main conversation is not polluted with file reads, tool outputs, and agent orchestration. This is the recommended mode for full runs.
-- **`--inline`** — Inline mode. The workflow runs directly in the current conversation. Use this for debugging, short scoped runs (`--only=<task>`), or when you explicitly want to observe each step.
+- **`--inline` (default)** — Inline mode. The workflow runs directly in the current conversation so you see each stage stream live in the main chat (scout → architect → crafter → …). The web UI still tails `events.jsonl` in parallel. This is the recommended default, especially on memory-constrained hosts where backgrounded subagents amplify swap pressure and starve the live viewer.
+- **`--bg`** — Isolated-subagent mode. The workflow runs inside a forked `Agent` context with `run_in_background: true`. Main chat stays silent until completion — useful when you deliberately want to free the main conversation for other work and only consume results via `http://localhost:4317/sessions/<id>` or notifications. Opt in explicitly.
 
 ### Dispatcher (what the MAIN conversation does)
 
 **Step 0 — Before doing anything else, parse `$ARGUMENTS` and branch:**
 
-1. If `$ARGUMENTS` contains `--inline` → skip to the "Workflow" section below and execute it directly in this conversation.
-2. Otherwise (default, or `--bg` explicitly) → **seed the session, then delegate**:
+1. If `$ARGUMENTS` contains `--bg` → **seed the session, then delegate**:
+2. Otherwise (default — no `--bg`) → **run inline**: skip the seed-and-delegate block and proceed directly to the "Workflow" section below, executing it in the current conversation. The Workflow section itself owns session seeding in inline mode — do NOT pre-seed here.
 
 ### Worktree provisioning (MANDATORY — first action, no silent fall-back)
 

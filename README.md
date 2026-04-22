@@ -22,7 +22,7 @@ brew install mayckol/tap/bender
 curl -fsSL https://raw.githubusercontent.com/mayckol/ai-bender/main/scripts/install.sh | sh
 ```
 
-Env overrides: `BENDER_VERSION=v0.22.0`, `BENDER_PREFIX=$HOME/.local` (avoids `sudo`).
+Env overrides: `BENDER_VERSION=v0.23.0`, `BENDER_PREFIX=$HOME/.local` (avoids `sudo`).
 
 **go install**:
 
@@ -130,14 +130,14 @@ Materialised by `bender init` under `.claude/skills/<name>/SKILL.md`.
 - `/cry [--type=<bug|feature|performance|architectural>] <request>` — capture intent. `/cry confirm` approves.
 - `/plan [--from=<cry-artifact>]` — produce spec + data model + risks + tasks under one timestamp. `/plan confirm` flips the set to approved. **Design-only: never writes code.** Follow-ups during `awaiting_confirm` re-plan the artifacts; implementation-shaped messages are refused.
 - `/tdd` — mirror the source tree under `.bender/artifacts/plan/tests/` with prose scaffolds. `/tdd confirm` approves.
-- `/ghu [--bg | --inline] [--only=<task>] [--skip=<name>[,...]] [--abort-on-failure]` — execute the approved plan. First action provisions a worktree. Only stage that writes code. When `/tdd` scaffolds exist, runs in TDD mode (Red → Green → Refactor). Otherwise walks scout → architect → crafter ∥ tester → linter → reviewer ∥ sentinel ∥ benchmarker ∥ scribe → report.
+- `/ghu [--inline | --bg] [--only=<task>] [--skip=<name>[,...]] [--abort-on-failure]` — execute the approved plan. First action provisions a worktree. Only stage that writes code. When `/tdd` scaffolds exist, runs in TDD mode (Red → Green → Refactor). Otherwise walks scout → architect → crafter ∥ tester → linter → reviewer ∥ sentinel ∥ benchmarker ∥ scribe → report.
 - `/implement <task>` — `/ghu` scoped to one task.
 - `/bender-doctor` — narrative wrapper around `bender doctor`.
 - `/bender-bootstrap` — fill pending constitution sections from README + manifests.
 
 `--skip` accepts `linter`/`lint`, `tester`/`test`, `reviewer`/`review`, `sentinel`/`security`, `benchmarker`/`perf`, `scribe`/`docs`, `surgeon`/`refactor`, `architect`, `review-sweep`. `crafter` and `scout` are not skippable.
 
-`/ghu` (default `--bg`) runs in an isolated subagent via Claude Code's `Agent` tool. `--inline` runs inline for debugging.
+`/ghu` defaults to `--inline`: the workflow runs in the current conversation so the main chat streams live progress while `bender server`'s web UI tails the same `events.jsonl` in parallel. Pass `--bg` to run inside an isolated subagent via Claude Code's `Agent` tool (`run_in_background: true`) — main chat stays silent until completion; use this when you want the main conversation free for other work.
 
 ## Agents
 

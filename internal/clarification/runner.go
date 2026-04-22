@@ -265,6 +265,9 @@ func emitEvent(sessionDir string, kind event.Type, b Batch, artifactPath string)
 	if _, err := f.Write(line); err != nil {
 		return fmt.Errorf("clarification: append event: %w", err)
 	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("clarification: sync events.jsonl: %w", err)
+	}
 	return nil
 }
 

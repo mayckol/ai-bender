@@ -22,14 +22,24 @@ type EmitParams struct {
 	Timestamp    time.Time
 }
 
-var emitMu sync.Mutex
+// emitMuBySession holds one *sync.Mutex per session_id so a slow fsync on
+// one session cannot stall emits on unrelated sessions.
+var emitMuBySession sync.Map
+
+func sessionMu(id string) *sync.Mutex {
+	if m, ok := emitMuBySession.Load(id); ok {
+		return m.(*sync.Mutex)
+	}
+	m, _ := emitMuBySession.LoadOrStore(id, &sync.Mutex{})
+	return m.(*sync.Mutex)
+}
 
 // Emit appends exactly one JSON-encoded event line to
-// <SessionsRoot>/<SessionID>/events.jsonl, fsyncs, and closes. The call is
-// serialised in-process by a package-level mutex so concurrent goroutines
-// cannot interleave partial writes. Cross-process safety relies on POSIX
-// O_APPEND atomicity for writes below PIPE_BUF, which events.jsonl lines
-// comfortably satisfy in practice.
+// <SessionsRoot>/<SessionID>/events.jsonl, fsyncs, and closes. Writes to
+// the same session are serialised in-process by a per-session mutex so
+// concurrent goroutines cannot interleave partial lines. Cross-process
+// safety relies on POSIX O_APPEND atomicity for writes below PIPE_BUF,
+// which events.jsonl lines comfortably satisfy in practice.
 func Emit(p EmitParams) error {
 	if p.SessionsRoot == "" {
 		return errors.New("emit: sessions_root required")
@@ -68,8 +78,9 @@ func Emit(p EmitParams) error {
 	}
 	path := filepath.Join(sessionDir, "events.jsonl")
 
-	emitMu.Lock()
-	defer emitMu.Unlock()
+	mu := sessionMu(p.SessionID)
+	mu.Lock()
+	defer mu.Unlock()
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY|os.O_CREATE|os.O_SYNC, 0o644)
 	if err != nil {

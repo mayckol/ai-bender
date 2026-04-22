@@ -251,6 +251,9 @@ func appendEvent(sessionDir string, ev *event.Event) error {
 	if _, err := f.Write(line); err != nil {
 		return fmt.Errorf("worktree: write event: %w", err)
 	}
+	if err := f.Sync(); err != nil {
+		return fmt.Errorf("worktree: sync events.jsonl: %w", err)
+	}
 	return nil
 }
 

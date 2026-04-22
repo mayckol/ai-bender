@@ -100,10 +100,20 @@ type VariableDef struct {
 }
 
 // EffectiveMaxConcurrent returns the cap to use when Meta.MaxConcurrent is
-// zero or negative.
+// zero or negative. Resolution order:
+//  1. explicit pipeline.max_concurrent from YAML,
+//  2. BENDER_MAX_CONCURRENT env var,
+//  3. host-memory-aware auto cap,
+//  4. DefaultMaxConcurrent.
 func (p *Pipeline) EffectiveMaxConcurrent() int {
 	if p.Meta.MaxConcurrent > 0 {
 		return p.Meta.MaxConcurrent
+	}
+	if n := envMaxConcurrent(); n > 0 {
+		return n
+	}
+	if n := autoCapFromHost(); n > 0 {
+		return n
 	}
 	return DefaultMaxConcurrent
 }
